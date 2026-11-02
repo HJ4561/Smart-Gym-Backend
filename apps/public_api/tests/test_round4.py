@@ -47,6 +47,19 @@ class TrustedDeviceTests(Base):
         TrustedDevice.objects.update(expires_at=timezone.now() - timedelta(minutes=1))
         self.assertEqual(self.login(token).data['two_factor'], 'verify')           # after 30 days: code again
 
+    def test_members_and_coaches_are_trusted_the_same_way(self):
+        for email, role in (('m@t.local', 'member'), ('c@t.local', 'trainer')):
+            user = User.objects.create_user(username=email, email=email, password=PW, role=role)
+            secret = two_factor.new_secret()
+            TwoFactor.objects.create(user=user, method='totp', secret=secret, enabled=True)
+            ticket = self.login(email=email).data['ticket']
+            r = self.client.post('/api/auth/2fa/verify/', {'ticket': ticket, 'code': two_factor.totp_now(secret),
+                                                           'remember_device': True}, format='json')
+            token = r.data['device_token']
+            self.assertIn('access', self.login(token, email=email).data, role)          # same device: no code
+            self.assertEqual(self.login(email=email).data['two_factor'], 'verify', role)  # new device: code
+            self.assertFalse(self.login(token, email='a@t.local').data.get('access'))    # token is per account
+
     def test_not_remembered_unless_asked(self):
         TwoFactor.objects.filter(user=self.admin).update(last_totp_step=0)
         r = self.verify(self.login().data['ticket'], remember=False)
@@ -146,3 +159,22 @@ class ListingTests(APITestCase):
         self.assertEqual(self.client.get('/api/admin/shop/orders/', {'sort': '-total', 'filter_status': 'paid'}).status_code, 200)
         self.assertEqual(self.client.get('/api/admin/registrations-api/registrations/',
                                          {'sort': '-submitted_at', 'filter_status': 'paid'}).status_code, 200)
+
+
+class CourseSyllabusTests(APITestCase):
+    def test_syllabus_is_public_but_lesson_links_need_enrolment(self):
+        from apps.catalog.models import CourseModule, Enrollment
+        coach = TrainerProfile.objects.create(user=User.objects.create_user(username='c', email='c@t.local', role='trainer'),
+                                              title='Coach')
+        course = Course.objects.create(trainer=coach, title='Base', description='x', category='Strength',
+                                       status='published', price=50)
+        CourseModule.objects.create(course=course, order=1, title='Day 1', video_url='https://youtu.be/secret',
+                                    pdf_url='https://x.test/plan.pdf')
+        member = User.objects.create_user(username='m', email='m@t.local', password=PW, role='member')
+        self.client.force_authenticate(member)
+        r = self.client.get(f'/api/catalog/courses/{course.id}/').data
+        self.assertEqual((r['enrolled'], r['modules'][0]['title'], r['modules'][0]['video_url'], r['modules'][0]['pdf_url']),
+                         (False, 'Day 1', '', ''))
+        Enrollment.objects.create(member=member, course=course)
+        r = self.client.get(f'/api/catalog/courses/{course.id}/').data
+        self.assertEqual((r['enrolled'], r['modules'][0]['video_url']), (True, 'https://youtu.be/secret'))

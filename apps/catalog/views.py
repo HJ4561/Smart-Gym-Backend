@@ -126,6 +126,14 @@ def course_detail(request, course_id):
         status='published',
     )
     data = CourseDetailSerializer(course, context={'request': request}).data
+    # The syllabus is public, the lesson videos and PDFs are for enrolled members only.
+    enrolled = (request.user.is_authenticated
+                and Enrollment.objects.filter(member=request.user, course=course).exists())
+    data['enrolled'] = enrolled
+    if not enrolled:
+        for m in data['modules']:
+            m['video_url'] = ''
+            m['pdf_url'] = ''
     # Add reviews
     reviews = course.reviews.all()[:10]
     data['reviews'] = CourseReviewSerializer(reviews, many=True).data
