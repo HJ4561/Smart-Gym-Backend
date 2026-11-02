@@ -146,13 +146,47 @@ PHOTO_CHECKS_PER_IP_HOUR = 60
 @api_view(['POST'])
 @permission_classes([AllowAny])
 @authentication_classes([])
+def public_liveness_start(request):
+    """POST /api/public/liveness/start/ → {token, stage, prompt}: begins the live face check."""
+    from apps.accounts import ratelimit
+    from apps.members import liveness
+    try:
+        token, step = liveness.start(ratelimit.client_ip(request))
+    except liveness.LivenessError as e:
+        return Response({'detail': str(e), 'code': e.code}, status=e.status)
+    return Response({'token': token, **step})
+
+
+@api_view(['POST'])
+@permission_classes([AllowAny])
+@authentication_classes([])
+@parser_classes([MultiPartParser, FormParser])
+def public_liveness_frame(request):
+    """
+    POST /api/public/liveness/frame/  multipart: token, frame (small JPEG)
+    → {stage: straight|turn1|turn2|done, prompt, face, hint}
+    """
+    from apps.members import liveness
+    f = request.FILES.get('frame')
+    if not f or f.size > 600_000:
+        return Response({'detail': 'Send one small camera frame.', 'code': 'frame'}, status=400)
+    try:
+        return Response(liveness.frame(request.data.get('token'), f))
+    except liveness.LivenessError as e:
+        return Response({'detail': str(e), 'code': e.code}, status=e.status)
+
+
+@api_view(['POST'])
+@permission_classes([AllowAny])
+@authentication_classes([])
 @parser_classes([MultiPartParser, FormParser])
 def public_photo_check(request):
     """
-    POST /api/public/photo-check/   multipart: photo (file)
+    POST /api/public/photo-check/   multipart: photo (file), liveness_token
     The signup camera asks right after a capture, so the person hears "no face found" at once
-    instead of after filling in the whole form. Registration runs the same check again.
-    200 {"ok": true} · 400 {"photo": [message], "code": "no_face" | "blurry" | …}
+    instead of after filling in the whole form. With a passed live face check (liveness_token)
+    the photo is registered as the one this person may sign up with. Registration checks again.
+    200 {"ok": true, "live": bool} · 400 {"photo": [message], "code": "no_face" | "blurry" | "not_live" | …}
     """
     from apps.accounts import ratelimit
     from apps.core.photo_quality import photo_check
@@ -176,7 +210,14 @@ def public_photo_check(request):
         return Response({'photo': [message], 'code': code},
                         status=status.HTTP_503_SERVICE_UNAVAILABLE if code == 'unavailable'
                         else status.HTTP_400_BAD_REQUEST)
-    return Response({'ok': True})
+    if request.data.get('liveness_token'):
+        from apps.members import liveness
+        try:
+            liveness.attach_photo(request.data['liveness_token'], photo)
+        except liveness.LivenessError as e:
+            return Response({'photo': [str(e)], 'code': e.code}, status=e.status)
+        return Response({'ok': True, 'live': True})
+    return Response({'ok': True, 'live': False})
 
 
 @api_view(['POST'])
@@ -302,8 +343,17 @@ def moyasar_webhook(request):
 def admin_registrations(request):
     """
     GET /api/admin/registrations/?status=pending&search=&today=true
+        &sort=submitted_at|name|amount|status (−desc)  &filter_status= &filter_payment_status= &filter_plan=
+        &filter_submitted_after= &filter_submitted_before=
     """
-    qs = MembershipRegistration.objects.select_related('plan', 'approved_by', 'created_user__membership')
+    from apps.core import listing
+    qs = listing.apply(
+        MembershipRegistration.objects.select_related('plan', 'approved_by', 'created_user__membership'),
+        request.query_params, default_sort='-submitted_at',
+        sorts={'submitted_at': 'submitted_at', 'name': 'full_name', 'amount': 'payment_amount', 'status': 'status'},
+        filters={'status': ('status', 'str'), 'payment_status': ('payment_status', 'str'), 'plan': ('plan__name', 'str'),
+                 'submitted_after': ('submitted_at__date__gte', 'date'),
+                 'submitted_before': ('submitted_at__date__lte', 'date')})
 
     st = request.query_params.get('status')
     if st and st != 'all':

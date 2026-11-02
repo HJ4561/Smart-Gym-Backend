@@ -52,7 +52,7 @@ class ContentTestBase(APITestCase):
 
 class SeededContentTests(ContentTestBase):
     def test_migration_seeds_every_text_and_image(self):
-        self.assertEqual(SiteText.objects.count(), 855)
+        self.assertEqual(SiteText.objects.count(), 874)
         self.assertEqual(SiteImage.objects.count(), 25)
         self.assertFalse(SiteText.objects.filter(page='bkm').exists())      # booking removed
         self.assertFalse(SiteImage.objects.filter(key__startswith='home.sectors.').exists())  # home uses the facilities list
@@ -66,7 +66,7 @@ class SeededContentTests(ContentTestBase):
     def test_public_endpoint_returns_all_texts_and_images(self):
         r = self.client.get('/api/public/site-content/')
         self.assertEqual(r.status_code, 200)
-        self.assertEqual(len(r.data["texts"]), 855)
+        self.assertEqual(len(r.data["texts"]), 874)
         self.assertEqual(set(r.data['texts']['nav.home']), {'en', 'ar'})
         self.assertTrue(r.data['images']['fac.heroBg']['url'].startswith('https://'))
         self.assertIn('max-age=60', r['Cache-Control'])
@@ -111,7 +111,7 @@ class TextEditingTests(ContentTestBase):
         pages = {p['page']: p for p in self.client.get(f'{ADMIN}/pages/').data}
         self.assertEqual(pages['nav']['texts_customized'], 1)
         self.assertEqual(pages['fac']['images'], 1)       # hero; card images moved to the facilities list
-        self.assertEqual(sum(p['texts'] for p in pages.values()), 855)   # every page is listed
+        self.assertEqual(sum(p['texts'] for p in pages.values()), 874)   # every page is listed
 
     def test_unknown_key_is_404(self):
         self.as_admin()

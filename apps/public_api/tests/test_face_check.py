@@ -9,7 +9,7 @@ from apps.core import face_check
 from apps.core.photo_quality import photo_check
 from apps.members.models import MembershipRegistration
 
-from .faces import face_row, stub_faces
+from .faces import face_row, live_photo, stub_faces
 from .test_payments import PaymentTestBase, clear_image
 
 
@@ -62,7 +62,7 @@ class PhotoCheckEndpointTests(PaymentTestBase):
 
     def test_answers_ok_or_the_reason(self):
         with stub_faces(face_row()):
-            self.assertEqual(self.check().data, {'ok': True})
+            self.assertEqual(self.check().data, {'ok': True, 'live': False})
         with stub_faces():
             r = self.check()
         self.assertEqual((r.status_code, r.data['code']), (400, 'no_face'))
@@ -98,5 +98,5 @@ class RegistrationNeedsAFaceTests(PaymentTestBase):
         self.assertIn('More than one face', str(r.data['photo']))
 
     def test_signup_accepted_with_one_good_face(self):
-        with stub_faces(face_row()):
+        with stub_faces(face_row()), live_photo():
             self.assertEqual(self.register().status_code, 201)

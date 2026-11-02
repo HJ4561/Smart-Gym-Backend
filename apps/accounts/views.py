@@ -8,6 +8,8 @@ from rest_framework_simplejwt.tokens import RefreshToken
 
 from datetime import timedelta
 
+from django.utils import timezone
+
 from . import ratelimit
 from .models import User
 from .ratelimit import client_ip
@@ -66,7 +68,7 @@ class LoginView(TokenObtainPairView):
         # Password right. Accounts with 2-step verification (or roles that need it) get a ticket for
         # the second step instead of tokens; the refresh token made by the serializer is revoked.
         try:
-            step = two_factor.start_login(serializer.user)
+            step = two_factor.start_login(serializer.user, request.data.get('device_token'))
         except two_factor.TwoFactorError as e:
             return Response({e.field: str(e), 'detail': str(e)}, status=e.status)
         if step:
@@ -129,6 +131,8 @@ def change_password(request):
     )
     if serializer.is_valid():
         serializer.save()
+        from .two_factor import forget_devices
+        forget_devices(request.user)
         return Response({'detail': 'Password updated successfully.'})
     return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
 
@@ -236,6 +240,8 @@ def reset_password(request):
     user.set_password(new)
     user.must_change_password = False
     user.save(update_fields=['password', 'must_change_password'])
+    from .two_factor import forget_devices
+    forget_devices(user)
     ratelimit.clear('login_email', user.email.lower())     # a locked-out user can sign in again
     login_path = {'admin': '/admin/login', 'manager': '/admin/login', 'trainer': '/coach/login'}.get(user.role, '/login')
     return Response({'detail': 'Password changed. You can sign in now.', 'login_path': login_path})
@@ -244,12 +250,20 @@ def reset_password(request):
 # ============================================
 # 2-STEP VERIFICATION
 # ============================================
-def _tokens(user):
-    """The same body as a normal sign-in: {access, refresh, user}."""
+def _tokens(user, request=None):
+    """
+    The same body as a normal sign-in: {access, refresh, user}. With {remember_device: true} the
+    browser also gets `device_token`: this device won't be asked for a code for 30 days.
+    """
     from django.contrib.auth.models import update_last_login
+    from . import two_factor
     refresh = CustomTokenObtainPairSerializer.get_token(user)
     update_last_login(None, user)
-    return {'refresh': str(refresh), 'access': str(refresh.access_token), 'user': UserSerializer(user).data}
+    body = {'refresh': str(refresh), 'access': str(refresh.access_token), 'user': UserSerializer(user).data}
+    if request is not None and request.data.get('remember_device') in (True, 'true', '1', 1):
+        body['device_token'] = two_factor.trust_device(user, two_factor.device_label(request))
+        body['trusted_days'] = two_factor.TRUST_DAYS
+    return body
 
 
 def _tfa_error(e):
@@ -274,7 +288,7 @@ def two_factor_login_verify(request):
         user = two_factor.verify_login(request.data.get('ticket'), request.data.get('code'))
     except two_factor.TwoFactorError as e:
         return _tfa_error(e)
-    return Response(_tokens(user))
+    return Response(_tokens(user, request))
 
 
 @api_view(['POST'])
@@ -312,7 +326,7 @@ def two_factor_setup_confirm(request):
         user, codes = two_factor.confirm_method(request.data.get('ticket'), request.data.get('code'), purposes=('setup',))
     except two_factor.TwoFactorError as e:
         return _tfa_error(e)
-    return Response({**_tokens(user), 'backup_codes': codes})
+    return Response({**_tokens(user, request), 'backup_codes': codes})
 
 
 TFA_CHECKS_PER_15_MIN = 5
@@ -336,10 +350,15 @@ def _current_code_ok(request):
 
 def _tfa_status(user):
     from . import two_factor
+    from .models import TrustedDevice
     tf = two_factor.settings_for(user)
+    devices = TrustedDevice.objects.filter(user=user, expires_at__gt=timezone.now())
     return {
         'enabled': bool(tf), 'method': tf.method if tf else None,
         'required': two_factor.is_required(user),
+        'gym_enabled': two_factor.policy()['enabled'],      # off = nobody is asked for codes right now
+        'trusted_devices': [{'id': d.id, 'label': d.label or 'Browser', 'created_at': d.created_at,
+                             'last_used_at': d.last_used_at, 'expires_at': d.expires_at} for d in devices],
         'backup_codes_left': len(tf.backup_codes or []) if tf else 0,
         'email_available': two_factor.email_available(), 'email_hint': two_factor.email_hint(user.email),
         'confirmed_at': tf.confirmed_at if tf else None,
@@ -408,6 +427,20 @@ def two_factor_disable(request):
     if not ok:
         return err
     TwoFactor.objects.filter(user=request.user).delete()
+    two_factor.forget_devices(request.user)
+    return Response(_tfa_status(request.user))
+
+
+@api_view(['POST'])
+@permission_classes([IsAuthenticated])
+def two_factor_forget_devices(request):
+    """POST /api/auth/2fa/devices/forget/ {id?} — one trusted browser, or all of them (no id)."""
+    from . import two_factor
+    from .models import TrustedDevice
+    if request.data.get('id'):
+        TrustedDevice.objects.filter(user=request.user, id=request.data['id']).delete()
+    else:
+        two_factor.forget_devices(request.user)
     return Response(_tfa_status(request.user))
 
 

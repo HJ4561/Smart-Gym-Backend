@@ -173,13 +173,23 @@ def _apply_trainer(t, u, data, errors):
 def trainers(request):
     """
     GET  /api/admin/trainers/?search=&status=verified|unverified|hidden
+         &sort=name|rating|reviews|rate|experience|joined (−desc)
+         &filter_verified= &filter_accepting= &filter_active= &filter_offers_1on1=
     POST /api/admin/trainers/ {email, first_name, last_name, phone, title, ...}
          Adds a trainer. An existing member/staff account with that email is reused (its role
          becomes trainer unless it's admin/manager); otherwise an account without a password is
          created — they sign in to the coach portal once given access (portal-access/).
     """
     if request.method == 'GET':
+        from apps.core import listing
         qs = TrainerProfile.objects.select_related('user').order_by('-user__is_active', 'user__first_name')
+        if request.query_params.get('sort') or any(k.startswith('filter_') for k in request.query_params):
+            qs = listing.apply(
+                qs, request.query_params,
+                sorts={'name': 'user__first_name', 'rating': 'rating', 'reviews': 'total_reviews',
+                       'rate': 'hourly_rate', 'experience': 'years_experience', 'joined': 'created_at'},
+                filters={'verified': ('is_verified', 'bool'), 'accepting': ('is_accepting_clients', 'bool'),
+                         'active': ('user__is_active', 'bool'), 'offers_1on1': ('offers_1on1', 'bool')})
         q = (request.query_params.get('search') or '').strip()
         if q:
             qs = qs.filter(Q(user__first_name__icontains=q) | Q(user__last_name__icontains=q)
@@ -453,12 +463,23 @@ def _replace_modules(c, modules, errors):
 def courses(request):
     """
     GET  /api/admin/courses/?status=&q=&trainer=  — every course, drafts included.
+         &sort=updated_at|created_at|title|price|rating|enrolled|category (−desc)
+         &filter_status= &filter_category= &filter_level= &filter_trainer= &filter_featured= &filter_max_price=
     POST /api/admin/courses/ {title, description, category, trainer_id, …, modules?: [...]} → draft.
     """
     if request.method == 'GET':
+        from apps.core import listing
         qs = (Course.objects.select_related('trainer__user')
               .annotate(enrolled=Count('enrollments', distinct=True), module_count=Count('modules', distinct=True))
               .order_by('-is_featured', '-updated_at'))
+        if request.query_params.get('sort') or any(k.startswith('filter_') for k in request.query_params):
+            qs = listing.apply(
+                qs, request.query_params,
+                sorts={'updated_at': 'updated_at', 'created_at': 'created_at', 'title': 'title', 'price': 'price',
+                       'rating': 'rating', 'enrolled': 'enrolled', 'category': 'category'},
+                filters={'status': ('status', 'str'), 'category': ('category__iexact', 'str'), 'level': ('level', 'str'),
+                         'trainer': ('trainer_id', 'int'), 'featured': ('is_featured', 'bool'),
+                         'max_price': ('price__lte', 'decimal')})
         st = request.query_params.get('status')
         if st in STATUSES:
             qs = qs.filter(status=st)

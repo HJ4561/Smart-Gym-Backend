@@ -173,10 +173,20 @@ def _order_row(o):
 @api_view(['GET'])
 @permission_classes([IsAdminUser])
 def shop_orders(request):
-    """GET /api/admin/shop/orders/?status=&q=  (status 'open' = paid/preparing/ready/dispatched)"""
+    """
+    GET /api/admin/shop/orders/?status=&q=  (status 'open' = paid/preparing/ready/dispatched)
+        &sort=created_at|total|status|order_number (−desc)  &filter_status= &filter_delivery= &filter_member=
+        &filter_placed_after= &filter_placed_before=
+    """
+    from apps.core import listing
     from apps.shop.services import expire_stale_orders
     expire_stale_orders()
-    qs = Order.objects.select_related('member').prefetch_related('items', 'payment_intents').order_by('-created_at')
+    qs = listing.apply(
+        Order.objects.select_related('member').prefetch_related('items', 'payment_intents'), request.query_params,
+        default_sort='-created_at',
+        sorts={'created_at': 'created_at', 'total': 'total', 'status': 'status', 'order_number': 'order_number'},
+        filters={'status': ('status', 'str'), 'delivery': ('delivery_method', 'str'), 'member': ('member_id', 'int'),
+                 'placed_after': ('created_at__date__gte', 'date'), 'placed_before': ('created_at__date__lte', 'date')})
     st = request.query_params.get('status', '')
     if st == 'open':
         qs = qs.filter(status__in=['paid', 'preparing', 'ready', 'dispatched'])

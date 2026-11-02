@@ -28,4 +28,5 @@ urlpatterns = [
     path('2fa/send-code/', views.two_factor_send_code, name='2fa-send-code'),
     path('2fa/disable/', views.two_factor_disable, name='2fa-disable'),
     path('2fa/backup-codes/', views.two_factor_backup_codes, name='2fa-backup-codes'),
+    path('2fa/devices/forget/', views.two_factor_forget_devices, name='2fa-forget-devices'),
 ]

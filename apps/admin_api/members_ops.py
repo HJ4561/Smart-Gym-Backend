@@ -58,18 +58,31 @@ def _row(u, today):
     }
 
 
+MEMBER_SORTS = {'created_at': 'created_at', 'name': 'first_name', 'email': 'email',
+                'expiry': 'membership__expiry_date', 'plan': 'membership__plan__display_name'}
+MEMBER_FILTERS = {'plan': ('membership__plan__name', 'str'), 'active': ('is_active', 'bool'),
+                  'joined_after': ('created_at__date__gte', 'date'), 'joined_before': ('created_at__date__lte', 'date'),
+                  'expires_before': ('membership__expiry_date__lte', 'date')}
+
+
 @api_view(['GET'])
 @permission_classes([IsAdminUser])
 def members_list(request):
-    """GET /api/admin/members/?search=&status=active|expiring|expired|frozen|none|inactive&page="""
+    """
+    GET /api/admin/members/?search=&status=active|expiring|expired|frozen|none|inactive&page=
+        &sort=created_at|name|email|expiry|plan (−desc)  &filter_status= (same as status) &filter_plan=
+        &filter_active=  &filter_joined_after= &filter_joined_before= &filter_expires_before=
+    """
+    from apps.core import listing
     today = timezone.localdate()
-    qs = User.objects.filter(role='member').select_related('membership__plan').order_by('-created_at')
+    qs = listing.apply(User.objects.filter(role='member').select_related('membership__plan'), request.query_params,
+                       sorts=MEMBER_SORTS, filters=MEMBER_FILTERS, default_sort='-created_at')
     search = (request.query_params.get('search') or '').strip()
     if search:
         qs = qs.filter(Q(email__icontains=search) | Q(first_name__icontains=search) | Q(last_name__icontains=search)
                        | Q(phone__icontains=search) | Q(membership__iqama_number__icontains=search)
                        | Q(membership__pass_id__iexact=search))
-    st = request.query_params.get('status') or ''
+    st = request.query_params.get('filter_status') or request.query_params.get('status') or ''
     soon = today + timedelta(days=14)
     filters = {
         'inactive': Q(is_active=False),
@@ -252,6 +265,8 @@ def _reset_password(u, staff):
     u.set_password(temp)
     u.must_change_password = True
     u.save(update_fields=['password', 'must_change_password'])
+    from apps.accounts.two_factor import forget_devices
+    forget_devices(u)                       # new password → trusted browsers ask for a code again
     try:
         send_mail('Smart Gym — your temporary password · كلمة المرور المؤقتة',
                   f"Hi {u.first_name or u.email},\n\nA staff member reset your Smart Gym password.\n\n"
@@ -317,7 +332,9 @@ def reset_two_factor(u, staff):
     from apps.accounts.two_factor import is_required
     if not TwoFactor.objects.filter(user=u).exists():
         return f'{u.full_name or u.email} doesn’t have 2-step verification on.'
+    from apps.accounts.two_factor import forget_devices
     TwoFactor.objects.filter(user=u).delete()
+    forget_devices(u)
     logger.warning('2FA reset for %s by %s', u.email, staff.email)
     notify(u, 'system', '2-step verification was reset',
            'The gym turned off 2-step verification on your account. '

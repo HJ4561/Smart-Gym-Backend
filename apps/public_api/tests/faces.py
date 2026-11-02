@@ -26,5 +26,25 @@ def stub_faces(*rows):
     return patch('apps.core.face_check.find_faces', side_effect=fake)
 
 
+class _Both:
+    """Starts / stops several patchers together (setUpModule / tearDownModule)."""
+
+    def __init__(self, *patchers):
+        self.patchers = patchers
+
+    def start(self):
+        for p in self.patchers:
+            p.start()
+
+    def stop(self):
+        for p in self.patchers:
+            p.stop()
+
+
+def live_photo():
+    """Signup tests don't run the live face check (test_liveness does): any photo counts as live."""
+    return patch('apps.members.liveness.registration_problem', return_value=None)
+
+
 def one_face():
-    return stub_faces(face_row())
+    return _Both(stub_faces(face_row()), live_photo())

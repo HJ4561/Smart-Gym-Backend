@@ -6,6 +6,10 @@ code sent to their email. Each person picks the method when they turn it on.
 Required for everyone who signs in to a staff portal (REQUIRED_ROLES); members can turn it on
 from their profile. The browser only ever holds a short-lived ticket until the second step
 passes — no tokens are issued before that.
+
+The code is asked for once per device: after it passes, the browser can be trusted for
+TRUST_DAYS days (TrustedDevice). Admins can switch 2-step verification off for the whole gym, or
+make it optional for staff (Admin → Settings → Security; SystemSettings.security).
 """
 import base64
 import hashlib
@@ -22,7 +26,7 @@ from django.core.mail import send_mail
 from django.db import transaction
 from django.utils import timezone
 
-from .models import TwoFactor, TwoFactorChallenge
+from .models import TrustedDevice, TwoFactor, TwoFactorChallenge
 
 logger = logging.getLogger(__name__)
 
@@ -35,6 +39,7 @@ MAX_ATTEMPTS = 5          # wrong codes per ticket
 MAX_SENDS = 3             # emailed codes per ticket
 RESEND_GAP_SECONDS = 30
 BACKUP_CODES = 8
+TRUST_DAYS = 30
 
 
 class TwoFactorError(Exception):
@@ -46,12 +51,55 @@ class TwoFactorError(Exception):
         self.status = status
 
 
+def policy():
+    """{'enabled': ask for codes at all, 'required_for_staff': staff roles must set it up}."""
+    from apps.admin_api.models import SystemSettings
+    sec = SystemSettings.get_solo().security or {}
+    return {'enabled': sec.get('two_factor_enabled', True) is not False,
+            'required_for_staff': sec.get('two_factor_required_for_staff', True) is not False}
+
+
 def is_required(user):
-    return user.role in REQUIRED_ROLES
+    p = policy()
+    return p['enabled'] and p['required_for_staff'] and user.role in REQUIRED_ROLES
 
 
 def settings_for(user):
     return TwoFactor.objects.filter(user=user, enabled=True).first()
+
+
+# ============================================================
+# TRUSTED DEVICES ("don't ask again on this device for 30 days")
+# ============================================================
+def trust_device(user, label=''):
+    """A new device token for the browser to keep (shown once; only its hash is stored)."""
+    token = secrets.token_urlsafe(32)
+    TrustedDevice.objects.create(user=user, token_hash=_hash(token), label=label[:120],
+                                 expires_at=timezone.now() + timedelta(days=TRUST_DAYS))
+    TrustedDevice.objects.filter(user=user, expires_at__lt=timezone.now()).delete()
+    return token
+
+
+def is_trusted(user, token):
+    if not token or not isinstance(token, str) or len(token) > 100:
+        return False
+    d = TrustedDevice.objects.filter(user=user, token_hash=_hash(token), expires_at__gt=timezone.now()).first()
+    if d is None:
+        return False
+    TrustedDevice.objects.filter(id=d.id).update(last_used_at=timezone.now())
+    return True
+
+
+def forget_devices(user):
+    """Every trusted browser asks for a code again (password or 2-step settings changed)."""
+    TrustedDevice.objects.filter(user=user).delete()
+
+
+def device_label(request):
+    ua = request.META.get('HTTP_USER_AGENT', '')
+    browser = next((b for b in ('Edg', 'OPR', 'Chrome', 'Firefox', 'Safari') if b in ua), 'Browser')
+    system = next((o for o in ('Windows', 'Android', 'iPhone', 'iPad', 'Mac OS', 'Linux') if o in ua), '')
+    return f"{ {'Edg': 'Edge', 'OPR': 'Opera'}.get(browser, browser)}{' on ' + system if system else ''}"
 
 
 # ============================================================
@@ -208,13 +256,18 @@ def _check_code(ch, tf, code, allow_backup):
 # ============================================================
 # SIGN-IN
 # ============================================================
-def start_login(user):
+def start_login(user, device_token=None):
     """
     None when no second step is needed; otherwise the response body for the browser:
     {two_factor: 'verify', method, ticket, email_hint}  — 2FA is on: enter the code
     {two_factor: 'setup', ticket, methods, email_hint}  — the role needs 2FA and it's off: set it up
+    No step when the gym switched 2-step verification off, or this device is trusted.
     """
+    if not policy()['enabled']:
+        return None
     tf = settings_for(user)
+    if tf and is_trusted(user, device_token):
+        return None
     if tf:
         ticket, ch = _new_challenge(user, 'login', method=tf.method)
         body = {'two_factor': 'verify', 'method': tf.method, 'ticket': ticket, 'email_hint': email_hint(user.email),
@@ -301,6 +354,7 @@ def confirm_method(ticket, code, purposes=('setup', 'enable'), user=None):
                 'method': ch.method, 'secret': ch.pending_secret if ch.method == 'totp' else '', 'enabled': True,
                 'backup_codes': hashes, 'last_totp_step': 0, 'confirmed_at': timezone.now(),
             })
+            forget_devices(ch.user)
             ch.used = True
             ch.save(update_fields=['used'])
     if error:

@@ -64,6 +64,7 @@ urlpatterns = [
 
     # System settings
     path('settings/', system_ops.system_status, name='settings-get'),
+    path('settings/security/', system_ops.security_settings, name='settings-security'),
     # Finance
     path('finance/overview/', finance.finance_overview, name='finance-overview'),
     path('finance/transactions/', finance.transactions_list, name='transactions-list'),

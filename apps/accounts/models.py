@@ -103,3 +103,21 @@ class TwoFactorChallenge(models.Model):
 
     class Meta:
         db_table = 'two_factor_challenges'
+
+
+class TrustedDevice(models.Model):
+    """
+    "Trust this device for 30 days": after a correct 2-step code the browser keeps a random token;
+    signing in again from it skips the code until it expires. Only a hash is stored. All of a
+    person's devices are forgotten when their password or 2-step settings change.
+    """
+    user = models.ForeignKey(User, on_delete=models.CASCADE, related_name='trusted_devices')
+    token_hash = models.CharField(max_length=64, unique=True)
+    label = models.CharField(max_length=120, blank=True)        # browser / OS, to recognise it
+    created_at = models.DateTimeField(auto_now_add=True)
+    last_used_at = models.DateTimeField(null=True, blank=True)
+    expires_at = models.DateTimeField()
+
+    class Meta:
+        db_table = 'trusted_devices'
+        ordering = ['-created_at']

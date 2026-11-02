@@ -91,6 +91,8 @@ def _invite(u, staff, reset=False):
     u.set_password(temp)
     u.must_change_password = True
     u.save(update_fields=['password', 'must_change_password'])
+    from apps.accounts.two_factor import forget_devices
+    forget_devices(u)
     coach = u.role == 'trainer'
     portal, portal_ar = ('coach portal', 'بوابة المدربين') if coach else ('admin', 'الإدارية')
     link = f'{member_portal_url()}{LOGIN_PATH.get(u.role, "/admin/login")}'

@@ -394,3 +394,23 @@ class MembershipFacility(models.Model):
     @property
     def is_active(self):
         return self.expires_on > date.today()
+
+
+class LivenessCheck(models.Model):
+    """
+    Proof that a live person was in front of the signup camera (apps.members.liveness): they
+    looked straight, then turned their head to one side and to the other — a printed or on-screen
+    photo can't. Registration accepts only the photo taken at the end of a passed check.
+    """
+    token_hash = models.CharField(max_length=64, unique=True)
+    stage = models.CharField(max_length=10, default='straight')     # straight → turn1 → turn2 → done
+    first_turn = models.SmallIntegerField(default=0)                # -1 / +1: which way the first turn went
+    frames = models.PositiveSmallIntegerField(default=0)
+    face_width = models.FloatField(null=True, blank=True)           # the face should stay about the same size
+    photo_sha256 = models.CharField(max_length=64, blank=True)      # the photo taken after it passed
+    used = models.BooleanField(default=False)                       # one registration per check
+    ip = models.CharField(max_length=64, blank=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        db_table = 'liveness_checks'

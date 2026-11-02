@@ -5070,6 +5070,120 @@
   "ar": "لا يمكننا التحقق من الصور الآن. حاول مرة أخرى بعد بضع دقائق."
  },
  {
+  "key": "cam.live.intro",
+  "page": "cam",
+  "en": "We check it's really you: press Start, look straight, then slowly turn your head to one side and the other. Your photo is taken automatically.",
+  "ar": "نتحقق أنك أنت فعلًا: اضغط «ابدأ»، انظر مباشرة، ثم أدر رأسك ببطء إلى جانب ثم إلى الجانب الآخر. تُلتقط صورتك تلقائيًا."
+ },
+ {
+  "key": "cam.live.start",
+  "page": "cam",
+  "en": "START FACE CHECK",
+  "ar": "ابدأ التحقق من الوجه"
+ },
+ {
+  "key": "cam.live.straight",
+  "page": "cam",
+  "en": "Look straight at the camera.",
+  "ar": "انظر مباشرة إلى الكاميرا."
+ },
+ {
+  "key": "cam.live.turn1",
+  "page": "cam",
+  "en": "Slowly turn your head to one side.",
+  "ar": "أدر رأسك ببطء إلى أحد الجانبين."
+ },
+ {
+  "key": "cam.live.turn2",
+  "page": "cam",
+  "en": "Now slowly turn your head to the other side.",
+  "ar": "الآن أدر رأسك ببطء إلى الجانب الآخر."
+ },
+ {
+  "key": "cam.live.done",
+  "page": "cam",
+  "en": "Done — look straight at the camera for your photo.",
+  "ar": "تم — انظر مباشرة إلى الكاميرا لالتقاط صورتك."
+ },
+ {
+  "key": "cam.live.taking",
+  "page": "cam",
+  "en": "TAKING YOUR PHOTO…",
+  "ar": "جارٍ التقاط صورتك…"
+ },
+ {
+  "key": "cam.live.expired",
+  "page": "cam",
+  "en": "The face check timed out. Press Start and try again.",
+  "ar": "انتهت مهلة التحقق من الوجه. اضغط «ابدأ» وحاول مرة أخرى."
+ },
+ {
+  "key": "cam.live.steps",
+  "page": "cam",
+  "en": "Face check steps",
+  "ar": "خطوات التحقق من الوجه"
+ },
+ {
+  "key": "cam.live.s1",
+  "page": "cam",
+  "en": "Straight",
+  "ar": "مباشرة"
+ },
+ {
+  "key": "cam.live.s2",
+  "page": "cam",
+  "en": "One side",
+  "ar": "جانب"
+ },
+ {
+  "key": "cam.live.s3",
+  "page": "cam",
+  "en": "Other side",
+  "ar": "الجانب الآخر"
+ },
+ {
+  "key": "cam.live.hint.no_face",
+  "page": "cam",
+  "en": "We can't see your face — keep it inside the oval.",
+  "ar": "لا نرى وجهك — أبقِه داخل الإطار البيضاوي."
+ },
+ {
+  "key": "cam.live.hint.many_faces",
+  "page": "cam",
+  "en": "Only you should be in front of the camera.",
+  "ar": "يجب أن تكون وحدك أمام الكاميرا."
+ },
+ {
+  "key": "cam.live.hint.size",
+  "page": "cam",
+  "en": "Keep your face at the same distance from the camera.",
+  "ar": "أبقِ وجهك على المسافة نفسها من الكاميرا."
+ },
+ {
+  "key": "cam.live.hint.straight_first",
+  "page": "cam",
+  "en": "Face the camera straight on first.",
+  "ar": "واجه الكاميرا مباشرة أولًا."
+ },
+ {
+  "key": "cam.live.hint.same_side",
+  "page": "cam",
+  "en": "That's the same side — turn the other way.",
+  "ar": "هذا الجانب نفسه — أدر رأسك للجهة الأخرى."
+ },
+ {
+  "key": "cam.err.not_live",
+  "page": "cam",
+  "en": "Finish the live face check first — a photo of a photo isn't accepted.",
+  "ar": "أكمل التحقق المباشر من الوجه أولًا — لا تُقبل صورة لصورة."
+ },
+ {
+  "key": "cam.err.network",
+  "page": "cam",
+  "en": "No connection — check your internet and try again.",
+  "ar": "لا يوجد اتصال — تحقق من الإنترنت وحاول مرة أخرى."
+ },
+ {
   "key": "fac.card.book",
   "page": "fac",
   "en": "BOOK · SAR {{price}}/MO",

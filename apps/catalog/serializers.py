@@ -157,12 +157,14 @@ class EnrollmentSerializer(serializers.ModelSerializer):
 # ============================================
 class TrainerSessionSerializer(serializers.ModelSerializer):
     trainer_name = serializers.CharField(source='trainer.user.full_name', read_only=True)
+    trainer_title = serializers.CharField(source='trainer.title', read_only=True)
+    trainer_photo = serializers.CharField(source='trainer.photo_url', read_only=True)
     trainer_id = serializers.IntegerField(write_only=True, required=False)
 
     class Meta:
         model = TrainerSession
         fields = [
-            'id', 'trainer', 'trainer_name', 'trainer_id',
+            'id', 'trainer', 'trainer_name', 'trainer_title', 'trainer_photo', 'trainer_id',
             'scheduled_at', 'duration_minutes', 'status',
             'focus_area', 'notes', 'amount_charged',
             'created_at',

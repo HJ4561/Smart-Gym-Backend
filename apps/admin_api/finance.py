@@ -142,8 +142,18 @@ def top_members_view(request):
 @api_view(['GET'])
 @permission_classes([IsAdminUser])
 def transactions_list(request):
-    """GET /api/admin/finance/transactions/?page=&q=&type=&range="""
-    qs = Transaction.objects.select_related('member').order_by('-created_at')
+    """
+    GET /api/admin/finance/transactions/?page=&q=&type=&range=
+        &sort=created_at|amount|type (−desc)  &filter_type= &filter_status= &filter_member= &filter_after=
+        &filter_before= &filter_min_amount= &filter_max_amount=
+    """
+    from apps.core import listing
+    qs = listing.apply(
+        Transaction.objects.select_related('member'), request.query_params, default_sort='-created_at',
+        sorts={'created_at': 'created_at', 'amount': 'amount', 'type': 'transaction_type'},
+        filters={'type': ('transaction_type', 'str'), 'status': ('status', 'str'), 'member': ('member_id', 'int'),
+                 'after': ('created_at__date__gte', 'date'), 'before': ('created_at__date__lte', 'date'),
+                 'min_amount': ('amount__gte', 'decimal'), 'max_amount': ('amount__lte', 'decimal')})
     if request.query_params.get('range'):
         since, _, _ = _range(request)
         qs = qs.filter(created_at__gte=since)

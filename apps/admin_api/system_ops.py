@@ -1,14 +1,19 @@
 """
-Admin → Settings: what this deployment is actually configured to do. Read-only — these values
-come from the server's environment variables. Never returns secrets, only whether they're set.
+Admin → Settings: what this deployment is actually configured to do. Mostly read-only — these
+values come from the server's environment variables. Never returns secrets, only whether they're
+set. The one switch kept in the database: 2-step verification for the whole gym (security/).
 """
 from django.conf import settings
 from django.db import connection
 from django.db.models import Sum
+import logging
+
 from rest_framework.decorators import api_view, permission_classes
 from rest_framework.response import Response
 
 from .permissions import IsAdminUser
+
+logger = logging.getLogger(__name__)
 
 ACCESS = [   # mirrors the checks in the code (IsAdminUser, staff_ops._guard, members_ops role rules)
     {'role': 'Admin', 'portal': True, 'can': [
@@ -20,7 +25,10 @@ ACCESS = [   # mirrors the checks in the code (IsAdminUser, staff_ops._guard, me
         'Everything in this admin portal',
         'Add and edit trainers, nutritionists and receptionists',
     ], 'cannot': ['Change admins or managers', 'Change roles']},
-    {'role': 'Trainer · Nutritionist · Receptionist', 'portal': False, 'can': [
+    {'role': 'Coach (trainer)', 'portal': False, 'can': [
+        'The coach portal (/coach): own hours, sessions, courses, students, classes, machine videos, earnings',
+    ], 'cannot': ['Sign in to this admin portal', 'Publish courses or change session prices']},
+    {'role': 'Nutritionist · Receptionist', 'portal': False, 'can': [
         'Listed on the staff roster for scheduling',
     ], 'cannot': ['Sign in to this admin portal']},
     {'role': 'Member', 'portal': False, 'can': ['The member portal: pass, payments, classes, courses, shop']},
@@ -80,5 +88,47 @@ def system_status(request):
             'debug': settings.DEBUG,
         },
         'access': ACCESS,
+        'security': _security(),
         'me': {'email': request.user.email, 'name': request.user.full_name, 'role': request.user.role},
     })
+
+
+def _security():
+    from apps.accounts.two_factor import TRUST_DAYS, email_available, policy
+    return {**policy(), 'trust_days': TRUST_DAYS, 'email_codes': email_available()}
+
+
+@api_view(['PATCH'])
+@permission_classes([IsAdminUser])
+def security_settings(request):
+    """
+    PATCH /api/admin/settings/security/ {two_factor_enabled?, two_factor_required_for_staff?, password}
+    Admins only, with their password. Off = everyone signs in with email + password only (people
+    keep their 2-step setup and it works again when switched back on). Every admin is told.
+    """
+    from apps.notifications.service import notify_staff
+    from .models import SystemSettings
+    if request.user.role != 'admin':
+        return Response({'detail': 'Only an admin can change sign-in security.'}, status=403)
+    if not request.user.check_password(str(request.data.get('password') or '')):
+        return Response({'password': 'Your password isn’t right.'}, status=400)
+    s = SystemSettings.get_solo()
+    sec = dict(s.security or {})
+    changed = []
+    for key, label in (('two_factor_enabled', '2-step verification'),
+                       ('two_factor_required_for_staff', '2-step verification required for staff and coaches')):
+        if key in request.data:
+            value = bool(request.data[key])
+            before = sec.get(key, True) is not False
+            if before != value:
+                changed.append(f'{label}: {"on" if value else "off"}')
+            sec[key] = value
+    s.security = sec
+    s.updated_by = request.user
+    s.save(update_fields=['security', 'updated_by', 'updated_at'])
+    if changed:
+        logger.warning('Security settings changed by %s: %s', request.user.email, '; '.join(changed))
+        notify_staff('system', 'Sign-in security changed', f'{request.user.full_name or request.user.email} set '
+                     + '; '.join(changed) + '.', icon='shield', priority='high',
+                     action_label='Open settings', action_path='/admin/settings')
+    return Response(_security())

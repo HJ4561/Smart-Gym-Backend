@@ -422,7 +422,11 @@ def _fulfil_session(intent):
     when = timezone.localtime(session.scheduled_at).strftime('%A %d %b, %H:%M')
     notify(intent.member, 'trainer', 'Session booked',
            f'Your session with {session.trainer.user.full_name} is confirmed for {when}.', icon='event_available',
-           action_label='View trainer', action_path=f'/dashboard/trainers/{session.trainer_id}')
+           action_label='My sessions', action_path='/dashboard/my-sessions')
+    from apps.notifications.service import notify_coach
+    notify_coach(session.trainer, 'trainer', 'New 1-on-1 booking',
+                 f'{intent.member.full_name or "A member"} booked a session with you on {when}.', icon='event_available',
+                 action_label='My sessions', action_path='/coach/sessions')
     return True, ''
 
 

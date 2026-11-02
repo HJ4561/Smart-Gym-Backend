@@ -43,7 +43,10 @@ class RegistrationCreateSerializer(serializers.ModelSerializer):
     """
     Accepts multipart/form-data from the public site:
       iqama_number, full_name, email, phone, address, age, gender,
-      photo (file, required), plan (id), duration_months, password
+      photo (file, required), liveness_token, plan (id), duration_months, password
+
+    The photo must come from a passed live face check (apps.members.liveness) — a photo of a
+    photo is refused.
 
     The password becomes the member's login when an admin approves the signup.
 
@@ -120,6 +123,10 @@ class RegistrationCreateSerializer(serializers.ModelSerializer):
         if value.size > MAX_PHOTO_BYTES:
             raise serializers.ValidationError('Photo must be under 4 MB.')
         problem = photo_problem(value)
+        if problem:
+            raise serializers.ValidationError(problem)
+        from apps.members.liveness import registration_problem
+        problem = registration_problem(self.initial_data.get('liveness_token'), value)
         if problem:
             raise serializers.ValidationError(problem)
         return value
@@ -204,6 +211,8 @@ class RegistrationCreateSerializer(serializers.ModelSerializer):
         validated_data['payment_attempt_token'] = secrets.token_urlsafe(24)  # new attempt
         validated_data['status'] = MembershipRegistration.STATUS_PENDING
 
+        from apps.members.liveness import mark_used
+        mark_used(self.initial_data.get('liveness_token'))
         reg = getattr(self, '_resume', None)
         if reg is None:
             return MembershipRegistration.objects.create(**validated_data)
