@@ -147,8 +147,9 @@ def course_categories(request):
     GET /api/catalog/courses/categories/
     List all unique categories.
     """
+    # order_by() on the column itself: the model's default ordering would make DISTINCT per course
     categories = Course.objects.filter(status='published') \
-        .values_list('category', flat=True).distinct()
+        .order_by('category').values_list('category', flat=True).distinct()
     return Response(list(categories))
 
 
@@ -253,7 +254,8 @@ def my_sessions(request):
         return Response(TrainerSessionSerializer(qs, many=True).data)
 
     # Book = reserve a free slot from the trainer's availability; it becomes
-    # 'scheduled' once paid (apps.payments.gateway). The price is the trainer's hourly rate.
+    # 'scheduled' once paid (apps.payments.gateway), or at once when the trainer's rate is 0.
+    # The price is the trainer's hourly rate.
     from .slots import SLOT_MINUTES, MIN_LEAD_MINUTES, slot_is_free, within_availability
 
     serializer = TrainerSessionSerializer(data=request.data)
@@ -276,8 +278,11 @@ def my_sessions(request):
                             status=status.HTTP_409_CONFLICT)
         session = serializer.save(
             member=request.user, trainer=trainer, status='pending_payment',
-            duration_minutes=SLOT_MINUTES, amount_charged=trainer.hourly_rate,
+            duration_minutes=SLOT_MINUTES, amount_charged=trainer.hourly_rate or 0,
         )
+        if (session.amount_charged or 0) <= 0:          # a free session needs no payment step
+            from apps.payments.gateway import confirm_session
+            confirm_session(session)
     return Response(TrainerSessionSerializer(session).data, status=status.HTTP_201_CREATED)
 
 

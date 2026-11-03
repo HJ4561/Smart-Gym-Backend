@@ -26,7 +26,7 @@ from rest_framework.response import Response
 
 from apps.admin_api.permissions import IsAdminUser
 from apps.catalog.models import TrainerProfile
-from apps.notifications.service import notify
+from apps.notifications.service import notify, notify_coach, notify_staff
 
 from . import passes
 from .models import ClassEnrollment, ClassPass, GymClass
@@ -177,10 +177,24 @@ def cancel_class(request, class_id):
     e.save(update_fields=['status'])
     if was_booked:
         _promote_waitlist(c)
+    who = request.user.full_name or request.user.email
+    _tell_team(c, 'Class booking cancelled',
+               f'{who} cancelled their {"spot" if was_booked else "waitlist place"} in {c.name} '
+               f'({DAYS[c.day_of_week]}s at {c.start_time:%H:%M}).')
     return Response({'detail': f'Cancelled — you’re no longer booked into {c.name}.'})
 
 
 REFUND_HOURS = 24
+
+
+def _tell_team(c, title, message, *, staff=True):
+    """A cancellation the class's coach and the admin portal should know about, not only the member."""
+    if c.trainer_id:
+        notify_coach(c.trainer, 'attendance', title, message, icon='event_busy',
+                     action_label='My classes', action_path='/coach/classes')
+    if staff:
+        notify_staff('attendance', title, message, icon='event_busy',
+                     action_label='Open classes', action_path='/admin/classes')
 
 
 def _cancel_paid(request, c):
@@ -207,6 +221,9 @@ def _cancel_paid(request, c):
                            'Locker credit', f'class-pass:{p.id}')
     notify(request.user, 'attendance', 'Session cancelled', f'SAR {p.amount} for {c.name} on {day:%a %d %b} is back '
            'in your locker credit.', icon='event_busy', action_label='View payments', action_path='/dashboard/payments')
+    _tell_team(c, 'Class session cancelled',
+               f'{request.user.full_name or request.user.email} cancelled their paid session of {c.name} on '
+               f'{day:%a %d %b} (SAR {p.amount} refunded to locker credit).')
     return Response({'detail': f'Cancelled — SAR {p.amount} is back in your locker credit.'})
 
 
@@ -384,6 +401,8 @@ def admin_class_detail(request, class_id):
             notify(e.member, 'attendance', 'Class cancelled',
                    f'{c.name} on {DAYS[c.day_of_week]}s at {c.start_time:%H:%M} has been removed from the timetable.',
                    icon='event_busy', action_label='Find another class', action_path='/dashboard/classes')
+        _tell_team(c, 'Class cancelled', f'{request.user.full_name or request.user.email} removed {c.name} '
+                   f'({DAYS[c.day_of_week]}s at {c.start_time:%H:%M}) from the timetable.')
         c.delete()
         return Response(status=204)
     before = (c.day_of_week, c.start_time, c.is_active)
@@ -405,6 +424,7 @@ def admin_class_detail(request, class_id):
         for e in c.enrollments.filter(status__in=BOOKED + ['waitlist']).select_related('member'):
             notify(e.member, 'attendance', 'Class timetable changed', what, icon='event_note',
                    action_label='My classes', action_path='/dashboard/classes')
+        _tell_team(c, 'Class paused' if not c.is_active else 'Class timetable changed', what, staff=False)
     return Response(_row(_annotated(GymClass.objects.filter(id=c.id)).get()))
 
 
@@ -443,6 +463,9 @@ def admin_roster_remove(request, class_id, enrollment_id):
            icon='event_busy', action_label='My classes', action_path='/dashboard/classes')
     if was_booked:
         _promote_waitlist(e.gym_class)
+    _tell_team(e.gym_class, 'Class booking cancelled',
+               f'{e.member.full_name or e.member.email} was removed from {e.gym_class.name} by '
+               f'{request.user.full_name or request.user.email}.')
     return Response({'detail': f'{e.member.full_name or e.member.email} removed.'})
 
 

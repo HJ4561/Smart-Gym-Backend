@@ -90,9 +90,15 @@ def is_trusted(user, token):
     return True
 
 
-def forget_devices(user):
-    """Every trusted browser asks for a code again (password or 2-step settings changed)."""
-    TrustedDevice.objects.filter(user=user).delete()
+def forget_devices(user, keep=None):
+    """
+    Every trusted browser asks for a code again (password or 2-step settings changed) — except
+    `keep`, the device token of the browser that made the change, when given.
+    """
+    qs = TrustedDevice.objects.filter(user=user)
+    if keep and isinstance(keep, str) and len(keep) <= 100:
+        qs = qs.exclude(token_hash=_hash(keep))
+    qs.delete()
 
 
 def device_label(request):

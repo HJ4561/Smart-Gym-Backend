@@ -72,11 +72,10 @@ def nutritionist_detail(request, nutritionist_id):
 def my_plan(request):
     """
     GET /api/nutrition/plan/
-    Returns the current active plan for the user.
+    The member's newest active plan (a member can have one per nutritionist they paid; all of them
+    are at GET /api/nutrition/plans/).
     """
-    plan = NutritionPlan.objects.filter(
-        member=request.user, status='active'
-    ).select_related('nutritionist__user').first()
+    plan = _active_plans(request.user).first()
 
     if not plan:
         return Response(
@@ -85,6 +84,19 @@ def my_plan(request):
         )
 
     return Response(NutritionPlanSerializer(plan).data)
+
+
+def _active_plans(member):
+    """Every active plan of the member, newest first — one per nutritionist they've paid."""
+    return (NutritionPlan.objects.filter(member=member, status='active')
+            .select_related('nutritionist__user').order_by('-created_at', '-id'))
+
+
+@api_view(['GET'])
+@permission_classes([IsAuthenticated])
+def my_plans(request):
+    """GET /api/nutrition/plans/ — all the member's active plans, newest first."""
+    return Response(NutritionPlanSerializer(_active_plans(request.user), many=True).data)
 
 
 # Goal presets used when a member requests a plan
@@ -158,7 +170,9 @@ def request_plan(request):
     from django.db import transaction as db_transaction
     from apps.payments.gateway import activate_plan
     with db_transaction.atomic():
-        NutritionPlan.objects.filter(member=request.user, status='pending_payment').update(status='archived')
+        # An older unpaid request to the same nutritionist is replaced; requests to others stay.
+        NutritionPlan.objects.filter(member=request.user, status='pending_payment',
+                                     nutritionist=nutritionist).update(status='archived')
         plan = NutritionPlan.objects.create(
             member=request.user,
             nutritionist=nutritionist,
@@ -198,10 +212,7 @@ def meals(request):
     # POST — log a meal
     serializer = MealLogSerializer(data=request.data)
     if serializer.is_valid():
-        plan = NutritionPlan.objects.filter(
-            member=request.user, status='active'
-        ).first()
-        serializer.save(member=request.user, plan=plan)
+        serializer.save(member=request.user, plan=_active_plans(request.user).first())
         return Response(serializer.data, status=status.HTTP_201_CREATED)
     return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
 
@@ -285,9 +296,7 @@ def daily_summary(request):
         fats=Sum('fats_g'),
     )
 
-    plan = NutritionPlan.objects.filter(
-        member=request.user, status='active'
-    ).first()
+    plan = _active_plans(request.user).first()
 
     water_entry, _ = WaterIntake.objects.get_or_create(
         member=request.user, date=today

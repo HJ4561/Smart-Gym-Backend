@@ -417,17 +417,22 @@ def _fulfil_session(intent):
         session.status = 'cancelled'
         session.save(update_fields=['status'])
         return False, 'the time slot was booked by someone else'
+    confirm_session(session)
+    return True, ''
+
+
+def confirm_session(session):
+    """The session is on: paid, or free (the trainer's rate is 0). Tells the member and the coach."""
     session.status = 'scheduled'
     session.save(update_fields=['status'])
     when = timezone.localtime(session.scheduled_at).strftime('%A %d %b, %H:%M')
-    notify(intent.member, 'trainer', 'Session booked',
+    notify(session.member, 'trainer', 'Session booked',
            f'Your session with {session.trainer.user.full_name} is confirmed for {when}.', icon='event_available',
            action_label='My sessions', action_path='/dashboard/my-sessions')
     from apps.notifications.service import notify_coach
     notify_coach(session.trainer, 'trainer', 'New 1-on-1 booking',
-                 f'{intent.member.full_name or "A member"} booked a session with you on {when}.', icon='event_available',
+                 f'{session.member.full_name or "A member"} booked a session with you on {when}.', icon='event_available',
                  action_label='My sessions', action_path='/coach/sessions')
-    return True, ''
 
 
 def _fulfil_nutrition(intent):
@@ -441,9 +446,12 @@ def _fulfil_nutrition(intent):
 
 
 def activate_plan(plan):
-    """Start a requested plan: it replaces the member's current one. Caller holds a transaction."""
+    """
+    Start a requested plan. Plans with other nutritionists stay active — a member can work with
+    several nutritionists they've paid. Caller holds a transaction.
+    """
     from apps.nutrition.models import NutritionPlan
-    NutritionPlan.objects.filter(member=plan.member, status='active').exclude(id=plan.id).update(status='archived')
+    NutritionPlan.objects.filter(member=plan.member, status='active', nutritionist=plan.nutritionist)         .exclude(id=plan.id).update(status='archived')
     plan.status = 'active'
     plan.save(update_fields=['status', 'updated_at'])
     name = plan.nutritionist.user.full_name or 'your nutritionist'

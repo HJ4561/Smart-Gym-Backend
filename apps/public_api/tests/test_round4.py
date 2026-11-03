@@ -178,3 +178,36 @@ class CourseSyllabusTests(APITestCase):
         Enrollment.objects.create(member=member, course=course)
         r = self.client.get(f'/api/catalog/courses/{course.id}/').data
         self.assertEqual((r['enrolled'], r['modules'][0]['video_url']), (True, 'https://youtu.be/secret'))
+
+
+class ReferenceBugTests(APITestCase):
+    """Three bugs found while recording the API reference."""
+
+    def setUp(self):
+        self.admin = User.objects.create_user(username='a', email='a@t.local', password=PW, role='admin')
+        self.client.force_authenticate(self.admin)
+
+    def test_staff_edit_answers_with_the_new_shift(self):
+        r = self.client.post('/api/admin/staff/', {'email': 'desk@t.local', 'first_name': 'Reem', 'role': 'receptionist',
+                                                   'shift_start': '08:00', 'shift_end': '16:00'}, format='json')
+        r = self.client.patch(f"/api/admin/staff/{r.data['id']}/", {'shift_start': '09:00', 'shift_end': '17:00'},
+                              format='json')
+        self.assertEqual((r.data['shift_start'], r.data['shift_end']), ('09:00', '17:00'))
+
+    def test_lookup_with_a_shared_iqama_picks_the_valid_membership(self):
+        plan = MembershipPlan.objects.create(name='pro', display_name='Pro', price_monthly=79, price_annual=790)
+        today = timezone.localdate()
+        for i, days in enumerate((-5, 40)):          # one expired, one valid, same Iqama
+            u = User.objects.create_user(username=f'm{i}', email=f'm{i}@t.local', password=PW, role='member')
+            Membership.objects.create(member=u, plan=plan, start_date=today - timedelta(days=60),
+                                      expiry_date=today + timedelta(days=days), iqama_number='2123456789')
+        r = self.client.get('/api/admin/registrations-api/members/lookup/', {'iqama': '2123456789'})
+        self.assertEqual((r.status_code, r.data['member']['email'], r.data['is_valid']), (200, 'm1@t.local', True))
+
+    def test_course_categories_are_listed_once(self):
+        coach = TrainerProfile.objects.create(user=User.objects.create_user(username='c', email='c@t.local',
+                                                                            role='trainer'), title='Coach')
+        for title in ('A', 'B', 'C'):
+            Course.objects.create(trainer=coach, title=title, description='x', category='Strength', status='published')
+        Course.objects.create(trainer=coach, title='D', description='x', category='VBT', status='published')
+        self.assertEqual(self.client.get('/api/catalog/courses/categories/').data, ['Strength', 'VBT'])

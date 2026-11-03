@@ -10,6 +10,7 @@ urlpatterns = [
 
     # Plan
     path('plan/', views.my_plan, name='my-plan'),
+    path('plans/', views.my_plans, name='my-plans'),
     path('plan/request/', views.request_plan, name='request-plan'),
 
     # Meals

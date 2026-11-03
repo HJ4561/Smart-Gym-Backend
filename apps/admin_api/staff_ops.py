@@ -208,6 +208,7 @@ def _save(u, fields):
     if 'status' in fields:
         p.status = fields['status']
     p.save()
+    u.staff_profile = p          # a select_related copy on `u` would otherwise answer with the old values
     if u.role == 'trainer':
         from apps.catalog.models import TrainerProfile
         TrainerProfile.objects.get_or_create(user=u, defaults={'title': 'Coach', 'hourly_rate': 0,

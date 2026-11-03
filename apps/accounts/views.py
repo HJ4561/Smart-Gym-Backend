@@ -123,7 +123,9 @@ def me(request):
 def change_password(request):
     """
     POST /api/auth/change-password/
-    Body: { old_password, new_password, new_password_confirm }
+    Body: { old_password, new_password, new_password_confirm, device_token? }
+    Other trusted browsers ask for a code again. The browser making the change stays trusted when
+    it sends its device_token — new staff change their first password right after trusting it.
     """
     serializer = ChangePasswordSerializer(
         data=request.data,
@@ -132,7 +134,7 @@ def change_password(request):
     if serializer.is_valid():
         serializer.save()
         from .two_factor import forget_devices
-        forget_devices(request.user)
+        forget_devices(request.user, keep=request.data.get('device_token'))
         return Response({'detail': 'Password updated successfully.'})
     return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
 

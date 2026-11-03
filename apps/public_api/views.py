@@ -497,9 +497,12 @@ def admin_member_lookup(request):
     elif not iqama:
         return Response({'detail': 'iqama or pass query param required.'}, status=400)
     else:
-        try:
-            membership = Membership.objects.select_related('member', 'plan').get(iqama_number__iexact=iqama)
-        except Membership.DoesNotExist:
+        # Iqama isn't unique on memberships: when two share one, the one that lets them in wins,
+        # then the latest expiry.
+        candidates = list(Membership.objects.select_related('member', 'plan')
+                          .filter(iqama_number__iexact=iqama).order_by('-expiry_date', '-id'))
+        membership = next((m for m in candidates if m.allows_entry), candidates[0] if candidates else None)
+        if membership is None:
             # Maybe they registered but aren't approved yet
             pending = MembershipRegistration.objects.filter(iqama_number__iexact=iqama).first()
             if pending:
