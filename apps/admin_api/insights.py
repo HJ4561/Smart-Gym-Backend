@@ -22,6 +22,14 @@ from apps.workouts.models import Exercise
 from .permissions import IsAdminUser
 
 AT_RISK_DAYS = 21
+MAX_HIGHLIGHT = 200      # ids carried in a link; past this the page just shows its list
+
+
+def with_highlight(path, ids):
+    """`path` plus ?highlight=1,2,3 — the page it opens marks those rows."""
+    if not ids or len(ids) > MAX_HIGHLIGHT:
+        return path
+    return path + ('&' if '?' in path else '?') + 'highlight=' + ','.join(str(int(i)) for i in ids)
 
 
 def _live_memberships():
@@ -76,56 +84,62 @@ def growth(request):
 @api_view(['GET'])
 @permission_classes([IsAdminUser])
 def insights(request):
-    """GET /api/admin/analytics/insights/ → [{priority, icon, title, description, action, path}]"""
+    """
+    GET /api/admin/analytics/insights/ → [{priority, icon, title, description, action, path, ids}]
+    `ids` are the records an item is about; `path` carries them as ?highlight= so that page marks them.
+    """
     today, now = timezone.localdate(), timezone.now()
     out = []
 
-    def add(priority, icon, title, description, action, path):
+    def add(priority, icon, title, description, action, path, ids):
+        ids = [int(i) for i in ids]
         out.append({'priority': priority, 'icon': icon, 'title': title, 'description': description,
-                    'action': action, 'path': path})
+                    'action': action, 'path': with_highlight(path, ids), 'ids': ids})
 
-    n = Reg.objects.filter(status=Reg.STATUS_PAID).count()
-    if n:
+    ids = list(Reg.objects.filter(status=Reg.STATUS_PAID).values_list('id', flat=True))
+    if n := len(ids):
         add('high', 'how_to_reg', f'{n} paid signup{"s" if n != 1 else ""} waiting',
-            'They have paid but can’t enter the gym until approved.', 'Review registrations', '/admin/registrations')
+            'They have paid but can’t enter the gym until approved.', 'Review registrations', '/admin/registrations', ids)
 
-    n = PaymentIntent.objects.filter(status='review').count()
-    if n:
+    ids = list(PaymentIntent.objects.filter(status='review').values_list('id', flat=True))
+    if n := len(ids):
         add('high', 'report', f'{n} payment{"s" if n != 1 else ""} need attention',
-            'Money was taken but the purchase wasn’t delivered — deliver it or refund.', 'Open shop orders', '/admin/shop-orders')
+            'Money was taken but the purchase wasn’t delivered — deliver it or refund.', 'Open shop orders',
+            '/admin/shop-orders?tab=review', ids)
 
-    n = _live_memberships().filter(expiry_date__lte=today + timedelta(days=7)).count()
-    if n:
+    ids = list(_live_memberships().filter(expiry_date__lte=today + timedelta(days=7)).values_list('member_id', flat=True))
+    if n := len(ids):
         add('high', 'hourglass_bottom', f'{n} membership{"s" if n != 1 else ""} end this week',
-            'A reminder now is the cheapest way to keep them.', 'See members', '/admin/members?status=expiring')
+            'A reminder now is the cheapest way to keep them.', 'See members', '/admin/members', ids)
 
     last = dict(CheckIn.objects.values('member').annotate(last=Max('check_in_time')).values_list('member', 'last'))
     cutoff = now - timedelta(days=AT_RISK_DAYS)
     live = _live_memberships().filter(start_date__lte=today - timedelta(days=AT_RISK_DAYS))
-    at_risk = sum(1 for mid in live.values_list('member_id', flat=True) if not last.get(mid) or last[mid] < cutoff)
-    if at_risk:
+    ids = [mid for mid in live.values_list('member_id', flat=True) if not last.get(mid) or last[mid] < cutoff]
+    if at_risk := len(ids):
         add('medium', 'person_off', f'{at_risk} paying member{"s" if at_risk != 1 else ""} haven’t visited in {AT_RISK_DAYS}+ days',
-            'Members who stop coming rarely renew. Send them a message from the members page.', 'See members', '/admin/members?status=active')
+            'Members who stop coming rarely renew. Send them a message from the members page.', 'See members', '/admin/members', ids)
 
-    n = Product.objects.filter(is_active=True, stock_quantity__lte=5).count()
-    if n:
+    ids = list(Product.objects.filter(is_active=True, stock_quantity__lte=5).values_list('id', flat=True))
+    if n := len(ids):
         add('medium', 'inventory_2', f'{n} shop product{"s" if n != 1 else ""} almost sold out',
-            'Five or fewer left in stock.', 'Open shop products', '/admin/shop')
+            'Five or fewer left in stock.', 'Open shop products', '/admin/shop', ids)
 
     full = [c for c in GymClass.objects.filter(is_active=True).annotate(
         w=Count('enrollments', filter=Q(enrollments__status='waitlist'))) if c.w]
     if full:
         add('medium', 'groups', f'{len(full)} class{"es" if len(full) != 1 else ""} with a waitlist',
-            f'{sum(c.w for c in full)} members are waiting — add spots or another session.', 'Open classes', '/admin/classes')
+            f'{sum(c.w for c in full)} members are waiting — add spots or another session.', 'Open classes', '/admin/classes', [c.id for c in full])
 
-    n = Exercise.objects.filter(is_active=True).filter(Q(qr_tag_id='') | Q(qr_tag_id__isnull=True)).count()
-    if n:
+    ids = list(Exercise.objects.filter(is_active=True).filter(Q(qr_tag_id='') | Q(qr_tag_id__isnull=True))
+               .values_list('id', flat=True))
+    if n := len(ids):
         add('low', 'qr_code_2', f'{n} machine{"s" if n != 1 else ""} without a QR code',
-            'Members can’t scan them to log sets.', 'Open machines', '/admin/machines')
+            'Members can’t scan them to log sets.', 'Open machines', '/admin/machines', ids)
 
-    n = TrainerProfile.objects.filter(user__is_active=True, is_verified=False).count()
-    if n:
+    ids = list(TrainerProfile.objects.filter(user__is_active=True, is_verified=False).values_list('id', flat=True))
+    if n := len(ids):
         add('low', 'verified', f'{n} trainer{"s" if n != 1 else ""} not verified',
-            'Members see a verified badge on checked trainers.', 'Open trainers', '/admin/trainers')
+            'Members see a verified badge on checked trainers.', 'Open trainers', '/admin/trainers', ids)
 
     return Response(out)

@@ -36,14 +36,18 @@ def alerts(request):
             items.append({'key': key, 'icon': icon, 'count': count, 'title': title,
                           'message': message, 'path': path, 'priority': priority})
 
-    paid_regs = Reg.objects.filter(status=Reg.STATUS_PAID).count()
+    from .insights import with_highlight
+    ids = list(Reg.objects.filter(status=Reg.STATUS_PAID).values_list('id', flat=True))
+    paid_regs = len(ids)
     add('registrations', 'how_to_reg', paid_regs, 'Registrations to approve',
-        f'{paid_regs} paid signup{"s" if paid_regs != 1 else ""} waiting for approval.', '/admin/registrations', 'high')
+        f'{paid_regs} paid signup{"s" if paid_regs != 1 else ""} waiting for approval.',
+        with_highlight('/admin/registrations', ids), 'high')
 
-    review = PaymentIntent.objects.filter(status='review').count()
+    ids = list(PaymentIntent.objects.filter(status='review').values_list('id', flat=True))
+    review = len(ids)
     add('payments', 'report', review, 'Payments to review',
         f'{review} payment{"s" if review != 1 else ""} taken but not delivered — refund or follow up.',
-        '/admin/shop-orders', 'high')
+        with_highlight('/admin/shop-orders?tab=review', ids), 'high')
 
     to_fulfil = Order.objects.filter(status__in=['paid', 'preparing']).count()
     add('orders', 'shopping_bag', to_fulfil, 'Shop orders to prepare',
@@ -70,10 +74,11 @@ def alerts(request):
         f'{pending} course{"s" if pending != 1 else ""} from coaches waiting to be published or sent back.',
         '/admin/trainers?tab=courses&status=pending', 'high')
 
-    expiring = Membership.objects.filter(status__in=['active', 'expiring'], expiry_date__gt=today,
-                                         expiry_date__lte=today + timedelta(days=7)).count()
+    ids = list(Membership.objects.filter(status__in=['active', 'expiring'], expiry_date__gt=today,
+                                         expiry_date__lte=today + timedelta(days=7)).values_list('member_id', flat=True))
+    expiring = len(ids)
     add('expiring', 'hourglass_bottom', expiring, 'Memberships ending this week',
-        f'{expiring} member{"s" if expiring != 1 else ""} expire within 7 days.', '/admin/members?status=expiring')
+        f'{expiring} member{"s" if expiring != 1 else ""} expire within 7 days.', with_highlight('/admin/members', ids))
 
     return Response({'total': sum(i['count'] for i in items), 'items': items})
 

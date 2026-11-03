@@ -38,11 +38,11 @@ class ConsoleBase(APITestCase):
 class AlertsSearchRevenueTests(ConsoleBase):
     def test_alerts_count_real_work(self):
         self.assertEqual(self.client.get('/api/admin/alerts/').data['total'], 0)
-        R.objects.create(iqama_number='2999999999', full_name='New Person', email='n@t.local', phone='1', age=30,
-                         gender='male', plan=self.plan, duration_months=1, status=R.STATUS_PAID, payment_status='paid')
+        reg = R.objects.create(iqama_number='2999999999', full_name='New Person', email='n@t.local', phone='1', age=30,
+                               gender='male', plan=self.plan, duration_months=1, status=R.STATUS_PAID, payment_status='paid')
         data = self.client.get('/api/admin/alerts/').data
         self.assertEqual(data['total'], 1)
-        self.assertEqual(data['items'][0]['path'], '/admin/registrations')
+        self.assertEqual(data['items'][0]['path'], f'/admin/registrations?highlight={reg.id}')
 
     def test_search_finds_member_by_iqama(self):
         res = self.client.get('/api/admin/search/', {'q': '2111111111'}).data
@@ -423,8 +423,16 @@ class InsightsTests(ConsoleBase):
         self.assertEqual(g[-1]['new_members'], 1)                     # latest month last, zeros filled
         self.ms.expiry_date = date.today() + timedelta(days=3)
         self.ms.save()
-        paths = {i['path'] for i in self.client.get('/api/admin/analytics/insights/').data}
-        self.assertIn('/admin/members?status=expiring', paths)
+        items = self.client.get('/api/admin/analytics/insights/').data
+        ending = next(i for i in items if i['icon'] == 'hourglass_bottom')
+        self.assertEqual((ending['ids'], ending['path']), ([self.member.id], f'/admin/members?highlight={self.member.id}'))
+
+    def test_members_list_can_be_narrowed_to_ids(self):
+        other = User.objects.create_user(username='o@t.local', email='o@t.local', password='x', role='member')
+        rows = self.client.get('/api/admin/members/', {'ids': f'{self.member.id},abc'}).data['results']
+        self.assertEqual([r['id'] for r in rows], [self.member.id])
+        self.assertEqual(self.client.get('/api/admin/members/').data['count'], 2)
+        self.assertTrue(other.id)
 
 
 class SystemStatusTests(ConsoleBase):

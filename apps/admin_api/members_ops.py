@@ -72,6 +72,7 @@ def members_list(request):
     GET /api/admin/members/?search=&status=active|expiring|expired|frozen|none|inactive&page=
         &sort=created_at|name|email|expiry|plan (−desc)  &filter_status= (same as status) &filter_plan=
         &filter_active=  &filter_joined_after= &filter_joined_before= &filter_expires_before=
+        &ids=1,2,3   only these members (the "Needs attention" links)
     """
     from apps.core import listing
     today = timezone.localdate()
@@ -82,6 +83,9 @@ def members_list(request):
         qs = qs.filter(Q(email__icontains=search) | Q(first_name__icontains=search) | Q(last_name__icontains=search)
                        | Q(phone__icontains=search) | Q(membership__iqama_number__icontains=search)
                        | Q(membership__pass_id__iexact=search))
+    ids = [int(i) for i in (request.query_params.get('ids') or '').split(',') if i.strip().isdigit()]
+    if ids:
+        qs = qs.filter(id__in=ids)
     st = request.query_params.get('filter_status') or request.query_params.get('status') or ''
     soon = today + timedelta(days=14)
     filters = {
