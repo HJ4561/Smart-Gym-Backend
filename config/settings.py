@@ -58,6 +58,7 @@ INSTALLED_APPS = [
     'apps.dashboard',
     'apps.public_api',
     'apps.site_content',
+    'apps.zatca',
 ]
 
 MIDDLEWARE = [
@@ -135,6 +136,11 @@ SHOP_VAT_RATE = config('SHOP_VAT_RATE', default='0.15')   # Saudi VAT
 GYM_LEGAL_NAME = config('GYM_LEGAL_NAME', default='Smart Gym')
 GYM_VAT_NUMBER = config('GYM_VAT_NUMBER', default='')
 GYM_ADDRESS = config('GYM_ADDRESS', default='Al Imam Muhammad Ibn Saud St, Al Muntazah, Al-Kharj 16942, Saudi Arabia')
+# ZATCA Phase 2 e-invoicing (apps.zatca). The key encrypts the device's private key and ZATCA tokens at
+# rest; the cron secret guards the retry endpoint that an external scheduler calls every few minutes.
+ZATCA_ENCRYPTION_KEY = config('ZATCA_ENCRYPTION_KEY', default='')
+ZATCA_CRON_SECRET = config('ZATCA_CRON_SECRET', default='')
+ZATCA_SEND_INLINE = config('ZATCA_SEND_INLINE', default=False, cast=bool)   # True: report in the request (tests)
 # Public base URL of this API, used in emailed receipt links.
 BACKEND_PUBLIC_URL = config('BACKEND_PUBLIC_URL', default='https://gym-backend-xi-seven.vercel.app')
 USE_I18N = True

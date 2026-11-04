@@ -326,9 +326,10 @@ def cancel_session(request, session_id):
         if refund > 0:
             credit, _ = LockerCredit.objects.select_for_update().get_or_create(member=request.user)
             LockerCredit.objects.filter(id=credit.id).update(balance=F('balance') + refund)
-            from apps.payments.gateway import record_transaction
+            from apps.payments.gateway import paid_transaction, record_transaction
             record_transaction(request.user, f'Refund — cancelled session #{session.id}', 'refund', -refund,
-                               'Locker credit', f'session:{session.id}')
+                               'Locker credit', f'session:{session.id}',
+                               refund_of=paid_transaction(trainer_session=session))
     if refund > 0:
         notify(request.user, 'trainer', 'Session cancelled',
                f'SAR {refund} was refunded to your locker credit.', icon='event_busy',

@@ -200,7 +200,7 @@ def _tell_team(c, title, message, *, staff=True):
 def _cancel_paid(request, c):
     from datetime import datetime, timedelta
     from django.db.models import F
-    from apps.payments.gateway import record_transaction
+    from apps.payments.gateway import paid_transaction, record_transaction
     from apps.payments.models import LockerCredit
     day = passes.parse_day(request.data.get('date'))
     if day is None:
@@ -218,7 +218,9 @@ def _cancel_paid(request, c):
         credit, _ = LockerCredit.objects.select_for_update().get_or_create(member=request.user)
         LockerCredit.objects.filter(id=credit.id).update(balance=F('balance') + p.amount)
         record_transaction(request.user, f'Refund — {c.name} on {day:%d %b}', 'refund', -p.amount,
-                           'Locker credit', f'class-pass:{p.id}')
+                           'Locker credit', f'class-pass:{p.id}',
+                           refund_of=paid_transaction(member=request.user, purpose='class_pass', gym_class=c,
+                                                      pass_kind='session', session_date=day))
     notify(request.user, 'attendance', 'Session cancelled', f'SAR {p.amount} for {c.name} on {day:%a %d %b} is back '
            'in your locker credit.', icon='event_busy', action_label='View payments', action_path='/dashboard/payments')
     _tell_team(c, 'Class session cancelled',

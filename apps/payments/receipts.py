@@ -8,6 +8,11 @@ signing in.
 
 Seller details come from settings (env): GYM_LEGAL_NAME, GYM_VAT_NUMBER, GYM_ADDRESS. When a VAT
 number is set, the receipt carries the ZATCA simplified-invoice QR (seller, VAT no., time, total, VAT).
+
+With ZATCA e-invoicing on (apps.zatca), a payment that has a signed e-invoice prints as ZATCA's
+simplified tax invoice instead: the seller's legal details from the ZATCA settings, net / VAT / gross
+per line, the three totals and the signed QR — "TEST" outside Production, and refunds print their
+credit note.
 """
 import base64
 import logging
@@ -60,6 +65,33 @@ def _money(v):
     return Decimal(str(v or 0)).quantize(Decimal('0.01'))
 
 
+def _zatca_document(**filters):
+    """The signed e-invoice / credit note for a payment, if ZATCA issued one (never raises)."""
+    try:
+        from apps.zatca.models import ZatcaDocument
+        return ZatcaDocument.objects.select_related('device', 'original').filter(**filters).order_by('icv').first()
+    except Exception:   # noqa: BLE001 — e.g. ZATCA tables not migrated yet: print the plain receipt
+        logger.exception('Could not look up the ZATCA document for %s', filters)
+        return None
+
+
+def _with_zatca(data, doc):
+    if doc is None:
+        return data
+    from apps.zatca.models import ZatcaConfig
+    cfg = ZatcaConfig.load()
+    data.update({
+        'number': doc.number, 'when': doc.issued_at, 'zatca': {
+            'doc_type': doc.doc_type, 'test': doc.is_test, 'qr': doc.qr, 'rate': doc.vat_rate,
+            'lines': doc.lines, 'net': doc.net, 'vat': doc.vat, 'rounding': doc.rounding, 'total': doc.total,
+            'original': doc.original.number if doc.original_id else '', 'reason': doc.reason,
+            'seller': {'name_ar': cfg.seller_name_ar, 'name_en': cfg.seller_name_en, 'vat': cfg.vat_number,
+                       'crn': cfg.crn, 'address': cfg.address_line},
+        },
+    })
+    return data
+
+
 def from_transaction(txn):
     from .models import Invoice, PaymentIntent
     inv = Invoice.objects.filter(transaction=txn).first()
@@ -72,7 +104,7 @@ def from_transaction(txn):
         subtotal, discount, tax = _money(order.subtotal), _money(order.discount), _money(order.tax)
     else:
         lines.append({'en': txn.description, 'ar': txn.description, 'qty': 1, 'amount': _money(txn.amount)})
-    return {
+    return _with_zatca({
         'kind': 't', 'pk': txn.id,
         'number': inv.invoice_number if inv else txn.transaction_id,
         'when': txn.settled_at or txn.created_at,
@@ -80,7 +112,7 @@ def from_transaction(txn):
         'type_en': txn.get_transaction_type_display(), 'type_ar': TYPE_AR.get(txn.transaction_type, ''),
         'lines': lines, 'subtotal': subtotal, 'discount': discount, 'tax': tax, 'total': _money(txn.amount),
         'method': txn.payment_method_label or '—', 'reference': txn.gateway_reference or txn.transaction_id,
-    }
+    }, _zatca_document(transaction=txn))
 
 
 def from_registration(reg):
@@ -92,13 +124,13 @@ def from_registration(reg):
                       'qty': 1, 'amount': _money(f['amount'])})
     method = {'mada': 'mada', 'creditcard': 'Card', 'stcpay': 'STC Pay', 'applepay': 'Apple Pay'}.get(
         (reg.payment_method or '').lower(), (reg.payment_method or 'Card').upper())
-    return {
+    return _with_zatca({
         'kind': 'r', 'pk': reg.id, 'number': f'REG-{reg.id:06d}', 'when': reg.payment_paid_at or reg.submitted_at,
         'customer': reg.full_name, 'email': reg.email,
         'type_en': 'Membership registration', 'type_ar': TYPE_AR['registration'],
         'lines': lines, 'subtotal': _money(reg.payment_amount), 'discount': _money(0), 'tax': _money(0),
         'total': _money(reg.payment_amount), 'method': method, 'reference': reg.moyasar_payment_id or '',
-    }
+    }, _zatca_document(registration=reg, doc_type='invoice'))
 
 
 def zatca_qr(data):
@@ -115,7 +147,75 @@ def zatca_qr(data):
 
 
 # ---------------------------------------------------------------- render
+TAX_TITLES = {
+    'invoice': ('Simplified tax invoice', 'فاتورة ضريبية مبسطة'),
+    'credit': ('Credit note', 'إشعار دائن'),
+    'debit': ('Debit note', 'إشعار مدين'),
+}
+
+
+def _render_tax_invoice(data):
+    """ZATCA's simplified tax invoice layout for a payment with a signed e-invoice."""
+    z, e = data['zatca'], escape
+    s = z['seller']
+    when = timezone.localtime(data['when'])
+    title_en, title_ar = TAX_TITLES[z['doc_type']]
+    rows = ''.join(
+        f"<tr><td>{e(l['name'])}</td><td class='n'>{l['qty']}</td><td class='n'>{Decimal(l['unit_net']):.2f}</td>"
+        f"<td class='n'>{Decimal(l['vat']):.2f}</td><td class='n'>{Decimal(l['net']) + Decimal(l['vat']):.2f}</td></tr>"
+        for l in z['lines'])
+    rounding = (f"<tr><td>Rounding · التقريب</td><td class='n'>{z['rounding']:.2f}</td></tr>" if z['rounding'] else '')
+    test = ("<div class='test'>TEST — not a legal tax invoice · تجريبي — ليست فاتورة ضريبية</div>" if z['test'] else '')
+    ref = (f"<div><b>Original invoice · الفاتورة الأصلية</b>{e(z['original'])}<br><span class='muted'>{e(z['reason'])}</span></div>"
+           if z['original'] else '')
+    names = e(s['name_ar']) + (f"<br>{e(s['name_en'])}" if s['name_en'] and s['name_en'] != s['name_ar'] else '')
+    return f"""<!doctype html><html lang="en"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>{e(title_en)} {e(data['number'])}</title>
+<style>
+body{{font-family:system-ui,'Segoe UI',Tahoma,sans-serif;background:#f4f4f5;margin:0;padding:24px;color:#111}}
+.r{{max-width:720px;margin:auto;background:#fff;border-radius:10px;padding:28px;box-shadow:0 2px 12px rgba(0,0,0,.08)}}
+h1{{font-size:20px;margin:0;text-align:center}} .ar{{direction:rtl;font-family:Tahoma,'Segoe UI',sans-serif}}
+.muted{{color:#666;font-size:12px;margin:4px 0}} .center{{text-align:center}}
+.test{{background:#fff4d6;color:#7a5200;border:1px solid #f0c36d;border-radius:6px;padding:8px;text-align:center;font-weight:700;margin-bottom:14px}}
+.grid{{display:grid;grid-template-columns:1fr 1fr;gap:8px 24px;margin:16px 0;font-size:13px}}
+.grid b{{display:block;font-size:11px;color:#666;font-weight:600}} table{{width:100%;border-collapse:collapse;font-size:13px;margin-top:8px}}
+th{{text-align:left;font-size:11px;color:#666;border-bottom:1px solid #ddd;padding:6px 4px}} td{{padding:8px 4px;border-bottom:1px solid #f0f0f0;vertical-align:top}}
+.n{{text-align:right;white-space:nowrap}} .tot td{{font-weight:700;font-size:16px;border:0;padding-top:12px}}
+.btn{{display:inline-block;margin-top:18px;padding:10px 16px;background:#e51937;color:#fff;border:0;border-radius:6px;font-weight:700;cursor:pointer}}
+#zqr{{display:flex;justify-content:center;margin-top:16px}} @media print{{body{{background:#fff;padding:0}}.r{{box-shadow:none}}.btn{{display:none}}}}
+</style></head><body><div class="r">
+{test}
+<h1>{e(title_en)}</h1><h1 class="ar">{e(title_ar)}</h1>
+<p class="center muted">{e(data['number'])}</p>
+<div class="grid">
+<div><b>Seller · البائع</b>{names}<br><span class="muted">{e(s['address'])}</span></div>
+<div><b>VAT number · الرقم الضريبي</b>{e(s['vat'])}<br><span class="muted">CR · السجل التجاري {e(s['crn'])}</span></div>
+<div><b>Date and time · التاريخ والوقت</b>{when:%Y-%m-%d %H:%M:%S}</div>
+<div><b>Customer · العميل</b>{e(data['customer'])}</div>
+{ref}
+</div>
+<table><thead><tr><th>Item · البند</th><th class="n">Qty · الكمية</th><th class="n">Price excl. VAT · السعر</th>
+<th class="n">VAT · الضريبة</th><th class="n">Total incl. VAT · الإجمالي</th></tr></thead>
+<tbody>{rows}</tbody></table>
+<table>
+<tr><td>Total excl. VAT · الإجمالي غير شامل الضريبة</td><td class='n'>{z['net']:.2f}</td></tr>
+<tr><td>VAT {z['rate']:.0f}% · ضريبة القيمة المضافة</td><td class='n'>{z['vat']:.2f}</td></tr>
+{rounding}
+<tr class="tot"><td>Total incl. VAT · الإجمالي شامل الضريبة</td><td class="n">SAR {z['total']:.2f}</td></tr>
+</table>
+<p class="muted">Paid with · طريقة الدفع: {e(data['method'])}</p>
+<div id="zqr" data-v="{e(z['qr'])}"></div>
+<p class="center muted">End of invoice · نهاية الفاتورة</p>
+<div class="center"><button class="btn" onclick="window.print()">Print / Save PDF · طباعة</button></div>
+</div>
+<script src='https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js'></script><script>var z=document.getElementById('zqr');new QRCode(z,{{text:z.dataset.v,width:160,height:160,correctLevel:QRCode.CorrectLevel.M}});</script>
+</body></html>"""
+
+
 def render_html(data):
+    if data.get('zatca'):
+        return _render_tax_invoice(data)
     s = seller()
     e = escape
     when = timezone.localtime(data['when'])

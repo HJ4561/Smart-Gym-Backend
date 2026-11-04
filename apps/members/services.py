@@ -144,14 +144,18 @@ def record_signup_payment(reg, user):
     ref = reg.moyasar_payment_id or reg.payment_reference
     if not ref or Transaction.objects.filter(member=user, gateway_reference=ref).exists():
         return None
-    return record_transaction(
+    txn = record_transaction(
         user, f'Membership — {reg.plan.display_name} ({reg.duration_months} mo)'
               + (f' + {len(reg.facilities)} facilit{"y" if len(reg.facilities) == 1 else "ies"}' if reg.facilities else ''),
         'subscription',
         reg.payment_amount or reg.total_price, (reg.payment_method or 'card').upper(), ref,
         when=reg.payment_paid_at or timezone.now(),
-        email=False,   # the receipt was emailed when the signup payment went through
+        email=False,     # the receipt was emailed when the signup payment went through
+        invoice=False,   # ...and its ZATCA invoice was issued then too
     )
+    from apps.zatca import service as zatca
+    zatca.after_commit(zatca.link_signup_transaction, reg, txn)
+    return txn
 
 
 # ============================================================
@@ -177,6 +181,8 @@ def reject_registration(reg: MembershipRegistration, reason: str = '', rejected_
             raise ValueError(f'Refund failed: {exc}') from exc
         reg.payment_status = 'refunded'
         refunded = True
+        from apps.zatca import service as zatca
+        zatca.after_commit(zatca.on_signup_refund, reg.id, reason)
 
     reg.status = MembershipRegistration.STATUS_REJECTED
     reg.rejection_reason = reason or 'No reason provided.'

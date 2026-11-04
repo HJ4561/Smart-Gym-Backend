@@ -356,10 +356,14 @@ def _fulfil(intent, method_label):
     intent.save()
 
 
-def record_transaction(member, description, tx_type, amount, method_label, gateway_ref, when=None, email=True):
+def record_transaction(member, description, tx_type, amount, method_label, gateway_ref, when=None, email=True,
+                       invoice=True, refund_of=None):
     """
     A settled Transaction + its paid Invoice (shown on the member's Payments page). A payment
     (amount > 0) also emails the member a bilingual receipt once the database commit lands.
+
+    ZATCA: once committed, a sale gets its signed tax invoice (`invoice=False` when one already
+    exists, e.g. a signup invoiced at payment) and a refund of `refund_of` gets a credit note.
     """
     when = when or timezone.now()
     txn = Transaction.objects.create(
@@ -373,10 +377,21 @@ def record_transaction(member, description, tx_type, amount, method_label, gatew
         invoice_number=f'INV-{uuid.uuid4().hex[:10].upper()}', member=member, transaction=txn,
         description=description[:200], amount=amount, total=amount, status='paid', paid_at=when,
     )
+    from apps.zatca import service as zatca
+    if amount > 0 and invoice:
+        zatca.after_commit(zatca.on_sale, txn.id)
+    elif amount < 0 and refund_of is not None:
+        zatca.after_commit(zatca.on_refund, refund_of.id, txn.id)
     if email and amount > 0:
         from .receipts import email_after_commit, from_transaction
         email_after_commit(from_transaction, txn)
     return txn
+
+
+def paid_transaction(**filters):
+    """The ledger entry of the paid intent matching `filters` (what a later refund reverses), or None."""
+    intent = PaymentIntent.objects.filter(status='paid', transaction__isnull=False, **filters).order_by('-paid_at').first()
+    return intent.transaction if intent else None
 
 
 def _fulfil_topup(intent):
@@ -593,7 +608,7 @@ def refund_intent(intent, reason='', staff=None):
             moyasar.refund_payment(intent.moyasar_payment_id, intent.amount_halalas)
             label = (intent.transaction.payment_method_label if intent.transaction_id else 'Card')
         record_transaction(intent.member, f'Refund — {intent.description}'[:200], 'refund', -intent.amount,
-                           label, f'refund:{intent.moyasar_payment_id or intent.id}')
+                           label, f'refund:{intent.moyasar_payment_id or intent.id}', refund_of=intent.transaction)
         intent.status = 'refunded'
         intent.failure_reason = (f'Refunded by {getattr(staff, "email", "staff")}: {reason}' if reason
                                  else f'Refunded by {getattr(staff, "email", "staff")}')[:255]

@@ -453,7 +453,8 @@ def change_session_status(session_id, new, by, trainer_id=None):
             credit, _ = LockerCredit.objects.select_for_update().get_or_create(member=s.member)
             LockerCredit.objects.filter(id=credit.id).update(balance=F('balance') + s.amount_charged)
             gateway.record_transaction(s.member, f'Refund — session #{s.id} cancelled by {by}', 'refund',
-                                       -s.amount_charged, 'Locker credit', f'session:{s.id}')
+                                       -s.amount_charged, 'Locker credit', f'session:{s.id}',
+                                       refund_of=gateway.paid_transaction(trainer_session=s))
     if new == 'cancelled':
         when = timezone.localtime(s.scheduled_at).strftime('%d %b %H:%M')
         notify(s.member, 'trainer', f'Session cancelled by {by}',

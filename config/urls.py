@@ -42,6 +42,9 @@ urlpatterns = [
     # ----- Registration approval + gym-entry lookup -----
     # Mounted under a distinct prefix to avoid colliding with apps.admin_api
     path('api/admin/registrations-api/', include('apps.public_api.admin_urls')),
+
+    # ----- ZATCA e-invoicing: settings, go-live wizard, invoice log, retry cron -----
+    path('api/admin/zatca/', include('apps.zatca.urls')),
 ]
 
 

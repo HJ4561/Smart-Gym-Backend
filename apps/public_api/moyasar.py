@@ -243,6 +243,8 @@ def _apply_payment(reg, payment):
     logger.info('Registration #%s ← Moyasar %s (%s) → payment_status=%s', reg.id, pid, status, reg.payment_status)
     if reg.payment_status == 'paid':   # first time it's paid (an already-paid signup returned earlier)
         from apps.payments.receipts import email_after_commit, from_registration
+        from apps.zatca import service as zatca
+        zatca.after_commit(zatca.on_signup_paid, reg.id)   # before the email, so the receipt carries it
         email_after_commit(from_registration, reg)
 
 
