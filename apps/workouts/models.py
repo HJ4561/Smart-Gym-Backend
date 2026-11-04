@@ -30,6 +30,7 @@ class Exercise(models.Model):
         help_text='e.g. Iso-Lateral Chest Press, Cable Bay, Barbell'
     )
     setup_instructions = models.TextField(blank=True)
+    setup_instructions_ar = models.TextField(blank=True, db_default='')   # Arabic; empty = show the English
     default_rest_seconds = models.IntegerField(default=90)
     recommended_weight_kg = models.DecimalField(
         max_digits=6, decimal_places=2,
@@ -44,6 +45,7 @@ class Exercise(models.Model):
 
 
     name = models.CharField(max_length=100, unique=True)
+    name_ar = models.CharField(max_length=100, blank=True, db_default='')   # Arabic; empty = show the English
     category = models.CharField(max_length=20, choices=CATEGORY_CHOICES)
     primary_muscle = models.CharField(max_length=20, choices=MUSCLE_CHOICES)
     secondary_muscles = models.JSONField(default=list, blank=True)
@@ -54,6 +56,7 @@ class Exercise(models.Model):
 
     # Instructions
     description = models.TextField(blank=True)
+    description_ar = models.TextField(blank=True, db_default='')   # Arabic; empty = show the English
     technique_cues = models.JSONField(default=list, blank=True)
     video_url = models.URLField(blank=True)
     image_url = models.URLField(blank=True)

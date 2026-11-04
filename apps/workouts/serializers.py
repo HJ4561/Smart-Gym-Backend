@@ -12,11 +12,11 @@ class ExerciseSerializer(serializers.ModelSerializer):
     class Meta:
         model = Exercise
         fields = [
-            'id', 'name', 'category', 'primary_muscle', 'secondary_muscles',
-            'machine_id', 'qr_tag_id', 'description', 'technique_cues',
+            'id', 'name', 'name_ar', 'category', 'primary_muscle', 'secondary_muscles',
+            'machine_id', 'qr_tag_id', 'description', 'description_ar', 'technique_cues',
             'video_url', 'image_url', 'is_compound', 'is_active',
             # NEW fields
-            'equipment_type', 'setup_instructions',
+            'equipment_type', 'setup_instructions', 'setup_instructions_ar',
             'default_rest_seconds', 'recommended_weight_kg',
             'technique_phases', 'target_intensity', 'cadence',
         ]
@@ -91,11 +91,12 @@ class WorkoutListSerializer(serializers.ModelSerializer):
 # ============================================
 class PersonalRecordSerializer(serializers.ModelSerializer):
     exercise_name = serializers.CharField(source='exercise.name', read_only=True)
+    exercise_name_ar = serializers.CharField(source='exercise.name_ar', read_only=True)
 
     class Meta:
         model = PersonalRecord
         fields = [
-            'id', 'exercise', 'exercise_name',
+            'id', 'exercise', 'exercise_name', 'exercise_name_ar',
             'best_weight_kg', 'best_reps', 'best_estimated_1rm',
             'achieved_at',
         ]

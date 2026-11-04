@@ -537,7 +537,7 @@ def next_workout_suggestion(request):
     return Response({
         'has_suggestion': True,
         'course_id': course.id,
-        'course_title': course.title,
+        'course_title': course.title, 'course_title_ar': course.title_ar,
         'module': {
             'id': next_module.id,
             'title': next_module.title,

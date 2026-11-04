@@ -13,6 +13,7 @@ from rest_framework.parsers import FormParser, MultiPartParser
 from rest_framework.response import Response
 
 from apps.accounts.models import User
+from apps.core.i18n import with_ar
 from apps.core.validators import email_error
 from apps.notifications.service import notify
 from apps.nutrition.models import DexaScan, MealLog, NutritionistProfile, NutritionPlan, WaterIntake
@@ -39,6 +40,7 @@ def _nutritionist_row(n):
         'first_name': u.first_name, 'last_name': u.last_name,
         'initials': ''.join(p[0] for p in name.split()[:2]).upper() or '?',
         'title': n.title, 'credentials': n.credentials, 'bio': n.bio, 'photo_url': n.photo_url,
+        **with_ar(n, 'title', 'bio'),
         'specialties': n.specialties or [], 'years_experience': n.years_experience,
         'hourly_rate': _f(n.hourly_rate), 'rating': _f(n.rating), 'total_reviews': n.total_reviews,
         'is_verified': n.is_verified, 'is_accepting_clients': n.is_accepting_clients, 'is_active': u.is_active,

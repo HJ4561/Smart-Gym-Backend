@@ -15,7 +15,7 @@ class ProductCategorySerializer(serializers.ModelSerializer):
 
     class Meta:
         model = ProductCategory
-        fields = ['id', 'key', 'name', 'icon', 'description', 'display_order', 'product_count']
+        fields = ['id', 'key', 'name', 'name_ar', 'icon', 'description', 'display_order', 'product_count']
 
     def get_product_count(self, obj):
         return obj.products.filter(is_active=True).count()
@@ -30,8 +30,8 @@ class ProductListSerializer(serializers.ModelSerializer):
     class Meta:
         model = Product
         fields = [
-            'id', 'name', 'sku', 'category',
-            'description', 'image_url',
+            'id', 'name', 'name_ar', 'sku', 'category',
+            'description', 'description_ar', 'image_url',
             'price', 'original_price', 'price_note',
             'badge_top', 'badge_top_accent', 'badge_secondary', 'telemetry',
             'stock_quantity', 'stock_label', 'is_low_stock', 'is_out_of_stock',

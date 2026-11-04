@@ -22,9 +22,11 @@ class GymClass(models.Model):
     ]
 
     name = models.CharField(max_length=120)
+    name_ar = models.CharField(max_length=120, blank=True, db_default='')   # Arabic; empty = show the English
     category = models.CharField(max_length=20, choices=CATEGORY_CHOICES)
     level = models.CharField(max_length=20, choices=LEVEL_CHOICES, default='all_levels')
     description = models.TextField(blank=True)
+    description_ar = models.TextField(blank=True, db_default='')   # Arabic; empty = show the English
 
     trainer = models.ForeignKey(
         TrainerProfile,

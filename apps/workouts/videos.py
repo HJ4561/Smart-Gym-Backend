@@ -61,7 +61,8 @@ def member_row(v, can, why, included_in):
 def coach_row(v):
     agg = getattr(v, 'sold', None)
     return {
-        'id': v.id, 'exercise_id': v.exercise_id, 'exercise': v.exercise.name, 'machine_id': v.exercise.machine_id,
+        'id': v.id, 'exercise_id': v.exercise_id, 'exercise': v.exercise.name, 'exercise_ar': v.exercise.name_ar,
+        'machine_id': v.exercise.machine_id,
         'tier': v.tier, 'tier_label': TIERS[v.tier], 'title': v.title, 'description': v.description,
         'video_url': v.video_url, 'duration_minutes': v.duration_minutes, 'price': str(v.price),
         'is_active': v.is_active, 'coach_id': v.coach_id,

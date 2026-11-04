@@ -13,6 +13,7 @@ from django.utils import timezone
 from rest_framework.decorators import api_view, permission_classes
 from rest_framework.response import Response
 
+from apps.core.i18n import read_ar, with_ar
 from apps.workouts.models import Exercise
 
 from .permissions import IsAdminUser
@@ -40,6 +41,7 @@ def _row(ex):
         'primary_muscle': ex.primary_muscle, 'muscle_label': MUSCLES.get(ex.primary_muscle, ex.primary_muscle),
         'equipment_type': ex.equipment_type, 'machine_id': ex.machine_id, 'qr_tag_id': ex.qr_tag_id,
         'description': ex.description, 'setup_instructions': ex.setup_instructions,
+        **with_ar(ex, 'name', 'description', 'setup_instructions'),
         'technique_cues': ex.technique_cues or [], 'video_url': ex.video_url, 'image_url': ex.image_url,
         'default_rest_seconds': ex.default_rest_seconds,
         'recommended_weight_kg': float(ex.recommended_weight_kg) if ex.recommended_weight_kg is not None else None,
@@ -75,6 +77,7 @@ def _apply(ex, data, errors):
             if len(v) > n:
                 errors[f] = f'Keep it under {n} characters.'
             setattr(ex, f, v)
+    read_ar(ex, data, {'name': 60, 'description': 4000, 'setup_instructions': 4000}, errors)
     if 'machine_id' in data:
         # Floor number / asset ID: 2–4 letters, a dash and 2–3 digits ("ST-07", "CARD-112").
         v = str(data.get('machine_id') or '').strip().upper()

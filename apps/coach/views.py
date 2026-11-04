@@ -55,7 +55,7 @@ def _f(v):
 # ============================================================
 # PROFILE + DASHBOARD
 # ============================================================
-COACH_EDITABLE = ('first_name', 'last_name', 'phone', 'title', 'credentials', 'bio', 'specialties',
+COACH_EDITABLE = ('first_name', 'last_name', 'phone', 'title', 'title_ar', 'credentials', 'bio', 'bio_ar', 'specialties',
                   'years_experience', 'is_accepting_clients', 'offers_1on1')
 
 
@@ -198,9 +198,10 @@ def session_status(request, session_id):
 # ============================================================
 # COURSES (drafts → review → published by the gym)
 # ============================================================
-COACH_COURSE_FIELDS = ('title', 'subtitle', 'description', 'category', 'level', 'duration_weeks', 'days_per_week',
+COACH_COURSE_FIELDS = ('title', 'title_ar', 'subtitle', 'subtitle_ar', 'description', 'description_ar', 'category',
+                       'level', 'duration_weeks', 'days_per_week',
                        'estimated_minutes_per_session', 'price', 'promo_video_url')
-LOCKED_WHEN_PUBLISHED = ('price', 'title')
+LOCKED_WHEN_PUBLISHED = ('price', 'title', 'title_ar')
 
 
 def _course(request, course_id):

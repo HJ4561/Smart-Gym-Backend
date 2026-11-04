@@ -121,7 +121,7 @@ def dashboard(request):
 
             exercises.append({
                 'id': we.id,
-                'name': we.exercise.name,
+                'name': we.exercise.name, 'name_ar': we.exercise.name_ar,
                 'muscle': we.exercise.primary_muscle,
                 'sets': sets_data,
                 'total_sets': we.sets.count(),

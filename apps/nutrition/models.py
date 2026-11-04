@@ -13,8 +13,10 @@ class NutritionistProfile(models.Model):
         related_name='nutritionist_profile',
     )
     title = models.CharField(max_length=120)  # "Head of Metabolic Architecture"
+    title_ar = models.CharField(max_length=120, blank=True, db_default='')   # Arabic; empty = show the English
     credentials = models.CharField(max_length=200, blank=True)  # "RD, CSSD"
     bio = models.TextField(blank=True)
+    bio_ar = models.TextField(blank=True, db_default='')   # Arabic; empty = show the English
     photo_url = models.URLField(blank=True)
 
     is_verified = models.BooleanField(default=False)

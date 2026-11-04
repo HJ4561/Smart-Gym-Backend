@@ -20,6 +20,7 @@ from rest_framework.response import Response
 
 from apps.accounts.models import User
 from apps.catalog.models import Course, CourseModule, Enrollment, TrainerProfile, TrainerSession
+from apps.core.i18n import read_ar, with_ar
 from apps.core.validators import duplicate_error, email_error
 from apps.site_content.serializers import SiteImageUploadSerializer
 
@@ -94,6 +95,7 @@ def _trainer_row(t, counts=None):
         'first_name': u.first_name, 'last_name': u.last_name,
         'initials': ''.join(p[0] for p in name.split()[:2]).upper() or '?',
         'title': t.title, 'credentials': t.credentials, 'bio': t.bio, 'photo_url': t.photo_url,
+        **with_ar(t, 'title', 'bio'),
         'specialties': t.specialties or [], 'years_experience': t.years_experience,
         'rating': _f(t.rating), 'total_reviews': t.total_reviews, 'total_students': t.total_students,
         'hourly_rate': _f(t.hourly_rate), 'is_verified': t.is_verified,
@@ -145,6 +147,7 @@ def _apply_trainer(t, u, data, errors):
         t.credentials = _text(data, 'credentials', errors, 200)
     if 'bio' in data:
         t.bio = _text(data, 'bio', errors, 4000)
+    read_ar(t, data, {'title': 120, 'bio': 4000}, errors)      # trainers and nutritionists alike
     if 'specialties' in data:
         raw = data.get('specialties') or []
         if isinstance(raw, str):
@@ -339,6 +342,7 @@ def trainer_stats(request):
 def _course_row(c, modules=False):
     row = {
         'id': c.id, 'title': c.title, 'subtitle': c.subtitle, 'description': c.description,
+        **with_ar(c, 'title', 'subtitle', 'description'),
         'category': c.category, 'level': c.level, 'level_label': LEVELS.get(c.level, c.level),
         'trainer_id': c.trainer_id, 'trainer_name': c.trainer.user.full_name or c.trainer.user.email,
         'cover_image_url': c.cover_image_url, 'promo_video_url': c.promo_video_url,
@@ -381,6 +385,7 @@ def _apply_course(c, data, errors):
         c.subtitle = _text(data, 'subtitle', errors, 200)
     if 'description' in data:
         c.description = _text(data, 'description', errors, 8000, required=True)
+    read_ar(c, data, {'title': 120, 'subtitle': 200, 'description': 8000}, errors)
     if 'category' in data:
         v = str(data.get('category') or '').strip()
         match = next((k for k in COURSE_CATEGORIES if k.casefold() == v.casefold()), None)

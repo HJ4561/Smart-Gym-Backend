@@ -13,8 +13,10 @@ class TrainerProfile(models.Model):
         related_name='trainer_profile',
     )
     title = models.CharField(max_length=120)  # "Head Elite Specialist"
+    title_ar = models.CharField(max_length=120, blank=True, db_default='')   # Arabic; empty = show the English
     credentials = models.CharField(max_length=200, blank=True)  # "CSCS*D, USAW"
     bio = models.TextField(blank=True)
+    bio_ar = models.TextField(blank=True, db_default='')   # Arabic; empty = show the English
     photo_url = models.URLField(blank=True)
 
     # Verification
@@ -97,8 +99,11 @@ class Course(models.Model):
         related_name='courses',
     )
     title = models.CharField(max_length=200)
+    title_ar = models.CharField(max_length=200, blank=True, db_default='')   # Arabic; empty = show the English
     subtitle = models.CharField(max_length=200, blank=True)
+    subtitle_ar = models.CharField(max_length=200, blank=True, db_default='')   # Arabic; empty = show the English
     description = models.TextField()
+    description_ar = models.TextField(blank=True, db_default='')   # Arabic; empty = show the English
     category = models.CharField(max_length=60)  # Hypertrophy, VBT, Combat, etc.
     level = models.CharField(max_length=20, choices=LEVEL_CHOICES, default='intermediate')
 

@@ -9,6 +9,7 @@ class ProductCategory(models.Model):
     """Categories: Protein, Pre-Workout, Recovery, Gear, Apparel"""
     key = models.SlugField(max_length=40, unique=True)
     name = models.CharField(max_length=60)
+    name_ar = models.CharField(max_length=60, blank=True, db_default='')   # Arabic; empty = show the English
     icon = models.CharField(max_length=40, blank=True)
     description = models.CharField(max_length=200, blank=True)
     display_order = models.IntegerField(default=0)
@@ -31,8 +32,10 @@ class Product(models.Model):
     )
 
     name = models.CharField(max_length=200)
+    name_ar = models.CharField(max_length=200, blank=True, db_default='')   # Arabic; empty = show the English
     sku = models.CharField(max_length=50, unique=True)
     description = models.TextField(blank=True)
+    description_ar = models.TextField(blank=True, db_default='')   # Arabic; empty = show the English
 
     # Media
     image_url = models.URLField(blank=True)

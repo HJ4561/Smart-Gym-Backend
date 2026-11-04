@@ -25,7 +25,7 @@ class TrainerProfileSerializer(serializers.ModelSerializer):
     class Meta:
         model = TrainerProfile
         fields = [
-            'id', 'user', 'title', 'credentials', 'bio', 'photo_url',
+            'id', 'user', 'title', 'title_ar', 'credentials', 'bio', 'bio_ar', 'photo_url',
             'is_verified', 'is_accepting_clients',
             'specialties', 'rating', 'total_reviews', 'total_students',
             'years_experience', 'hourly_rate',
@@ -75,18 +75,19 @@ class CourseListSerializer(serializers.ModelSerializer):
 
     trainer_name = serializers.CharField(source='trainer.user.full_name', read_only=True)
     trainer_title = serializers.CharField(source='trainer.title', read_only=True)
+    trainer_title_ar = serializers.CharField(source='trainer.title_ar', read_only=True)
     trainer_avatar = serializers.ImageField(source='trainer.user.avatar', read_only=True)
 
     class Meta:
         model = Course
         fields = [
-            'id', 'title', 'subtitle', 'category', 'level',
+            'id', 'title', 'title_ar', 'subtitle', 'subtitle_ar', 'category', 'level',
             'cover_image_url', 'duration_weeks', 'days_per_week',
             'estimated_minutes_per_session',
             'price', 'is_included_with_pro', 'free_for_me',
             'rating', 'total_reviews', 'total_enrolled',
             'is_featured',
-            'trainer_name', 'trainer_title', 'trainer_avatar',
+            'trainer_name', 'trainer_title', 'trainer_title_ar', 'trainer_avatar',
             'created_at',
         ]
 
@@ -107,7 +108,7 @@ class CourseDetailSerializer(serializers.ModelSerializer):
     class Meta:
         model = Course
         fields = [
-            'id', 'title', 'subtitle', 'description', 'category', 'level',
+            'id', 'title', 'title_ar', 'subtitle', 'subtitle_ar', 'description', 'description_ar', 'category', 'level',
             'cover_image_url', 'promo_video_url',
             'duration_weeks', 'days_per_week', 'estimated_minutes_per_session',
             'price', 'is_included_with_pro', 'free_for_me',
@@ -158,13 +159,14 @@ class EnrollmentSerializer(serializers.ModelSerializer):
 class TrainerSessionSerializer(serializers.ModelSerializer):
     trainer_name = serializers.CharField(source='trainer.user.full_name', read_only=True)
     trainer_title = serializers.CharField(source='trainer.title', read_only=True)
+    trainer_title_ar = serializers.CharField(source='trainer.title_ar', read_only=True)
     trainer_photo = serializers.CharField(source='trainer.photo_url', read_only=True)
     trainer_id = serializers.IntegerField(write_only=True, required=False)
 
     class Meta:
         model = TrainerSession
         fields = [
-            'id', 'trainer', 'trainer_name', 'trainer_title', 'trainer_photo', 'trainer_id',
+            'id', 'trainer', 'trainer_name', 'trainer_title', 'trainer_title_ar', 'trainer_photo', 'trainer_id',
             'scheduled_at', 'duration_minutes', 'status',
             'focus_area', 'notes', 'amount_charged',
             'created_at',
