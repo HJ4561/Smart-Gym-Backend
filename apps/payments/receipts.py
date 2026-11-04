@@ -12,7 +12,8 @@ number is set, the receipt carries the ZATCA simplified-invoice QR (seller, VAT 
 With ZATCA e-invoicing on (apps.zatca), a payment that has a signed e-invoice prints as ZATCA's
 simplified tax invoice instead: the seller's legal details from the ZATCA settings, net / VAT / gross
 per line, the three totals and the signed QR — "TEST" outside Production, and refunds print their
-credit note.
+credit note. A company (B2B) purchase prints as a tax invoice with the buyer's legal details and
+ZATCA's stamped QR once it is cleared ("Pending clearance" until then).
 """
 import base64
 import logging
@@ -85,6 +86,7 @@ def _with_zatca(data, doc):
             'doc_type': doc.doc_type, 'test': doc.is_test, 'qr': doc.qr, 'rate': doc.vat_rate,
             'lines': doc.lines, 'net': doc.net, 'vat': doc.vat, 'rounding': doc.rounding, 'total': doc.total,
             'original': doc.original.number if doc.original_id else '', 'reason': doc.reason,
+            'standard': doc.is_standard, 'buyer': doc.buyer_details, 'status': doc.status,
             'seller': {'name_ar': cfg.seller_name_ar, 'name_en': cfg.seller_name_en, 'vat': cfg.vat_number,
                        'crn': cfg.crn, 'address': cfg.address_line},
         },
@@ -152,6 +154,11 @@ TAX_TITLES = {
     'credit': ('Credit note', 'إشعار دائن'),
     'debit': ('Debit note', 'إشعار مدين'),
 }
+STANDARD_TITLES = {
+    'invoice': ('Tax invoice', 'فاتورة ضريبية'),
+    'credit': ('Credit note (tax invoice)', 'إشعار دائن (فاتورة ضريبية)'),
+    'debit': ('Debit note (tax invoice)', 'إشعار مدين (فاتورة ضريبية)'),
+}
 
 
 def _render_tax_invoice(data):
@@ -159,7 +166,19 @@ def _render_tax_invoice(data):
     z, e = data['zatca'], escape
     s = z['seller']
     when = timezone.localtime(data['when'])
-    title_en, title_ar = TAX_TITLES[z['doc_type']]
+    title_en, title_ar = (STANDARD_TITLES if z.get('standard') else TAX_TITLES)[z['doc_type']]
+    buyer = z.get('buyer') or {}
+    pending = ("<div class='test'>Pending clearance by ZATCA — this invoice is final once cleared. · "
+               "بانتظار اعتماد زاتكا — تصبح الفاتورة نهائية بعد الاعتماد.</div>"
+               if z.get('standard') and z.get('status') == 'pending' else '')
+    if buyer:
+        address = (f"{e(buyer.get('building_number'))} {e(buyer.get('street'))}, {e(buyer.get('district'))}, "
+                   f"{e(buyer.get('city'))} {e(buyer.get('postal_code'))}")
+        crn = f"<br><span class='muted'>CR · السجل التجاري {e(buyer.get('crn'))}</span>" if buyer.get('crn') else ''
+        party = (f"<div><b>Buyer · المشتري</b>{e(buyer.get('name'))}<br><span class='muted'>{address}</span></div>"
+                 f"<div><b>Buyer VAT number · الرقم الضريبي للمشتري</b>{e(buyer.get('vat_number'))}{crn}</div>")
+    else:
+        party = f"<div><b>Customer · العميل</b>{e(data['customer'])}</div>"
     rows = ''.join(
         f"<tr><td>{e(l['name'])}</td><td class='n'>{l['qty']}</td><td class='n'>{Decimal(l['unit_net']):.2f}</td>"
         f"<td class='n'>{Decimal(l['vat']):.2f}</td><td class='n'>{Decimal(l['net']) + Decimal(l['vat']):.2f}</td></tr>"
@@ -185,14 +204,14 @@ th{{text-align:left;font-size:11px;color:#666;border-bottom:1px solid #ddd;paddi
 .btn{{display:inline-block;margin-top:18px;padding:10px 16px;background:#e51937;color:#fff;border:0;border-radius:6px;font-weight:700;cursor:pointer}}
 #zqr{{display:flex;justify-content:center;margin-top:16px}} @media print{{body{{background:#fff;padding:0}}.r{{box-shadow:none}}.btn{{display:none}}}}
 </style></head><body><div class="r">
-{test}
+{test}{pending}
 <h1>{e(title_en)}</h1><h1 class="ar">{e(title_ar)}</h1>
 <p class="center muted">{e(data['number'])}</p>
 <div class="grid">
 <div><b>Seller · البائع</b>{names}<br><span class="muted">{e(s['address'])}</span></div>
 <div><b>VAT number · الرقم الضريبي</b>{e(s['vat'])}<br><span class="muted">CR · السجل التجاري {e(s['crn'])}</span></div>
 <div><b>Date and time · التاريخ والوقت</b>{when:%Y-%m-%d %H:%M:%S}</div>
-<div><b>Customer · العميل</b>{e(data['customer'])}</div>
+{party}
 {ref}
 </div>
 <table><thead><tr><th>Item · البند</th><th class="n">Qty · الكمية</th><th class="n">Price excl. VAT · السعر</th>

@@ -65,6 +65,8 @@ def create_intent(member, purpose, data):
     fields = builders[purpose](member, data)
     if fields['amount'] <= 0:
         raise PaymentError('Nothing to pay for.')
+    if data.get('business_customer_id'):
+        fields['business_customer'] = company_for(member, data['business_customer_id'])
     return PaymentIntent.objects.create(
         member=member, purpose=purpose, attempt_token=secrets.token_urlsafe(24), **fields,
     )
@@ -211,6 +213,19 @@ def course_is_free_for(member, course):
 # ============================================================
 # 2. MOYASAR FORM PARAMETERS
 # ============================================================
+def company_for(member, company_id):
+    """A company the member saved, for a tax invoice in its name (ZATCA B2B). Raises PaymentError."""
+    from apps.zatca import service as zatca
+    from apps.zatca.models import BusinessCustomer
+    if not zatca.b2b_on():
+        raise PaymentError('Company tax invoices aren’t available right now.')
+    pk = str(company_id).strip()
+    company = BusinessCustomer.objects.filter(pk=pk, owner=member, is_active=True).first() if pk.isdigit() else None
+    if company is None:
+        raise PaymentError('Choose one of your saved companies.')
+    return company
+
+
 def checkout_params(intent):
     return {
         'publishable_key': settings.MOYASAR_PUBLISHABLE_KEY,
@@ -339,7 +354,7 @@ def _fulfil(intent, method_label):
     intent.paid_at = now
     intent.transaction = record_transaction(
         intent.member, intent.description, TX_TYPE[intent.purpose], intent.amount,
-        method_label, intent.moyasar_payment_id or f'credit:{intent.id}',
+        method_label, intent.moyasar_payment_id or f'credit:{intent.id}', buyer=intent.business_customer,
     )
     if ok:
         intent.status = 'paid'
@@ -357,13 +372,14 @@ def _fulfil(intent, method_label):
 
 
 def record_transaction(member, description, tx_type, amount, method_label, gateway_ref, when=None, email=True,
-                       invoice=True, refund_of=None):
+                       invoice=True, refund_of=None, buyer=None):
     """
     A settled Transaction + its paid Invoice (shown on the member's Payments page). A payment
     (amount > 0) also emails the member a bilingual receipt once the database commit lands.
 
     ZATCA: once committed, a sale gets its signed tax invoice (`invoice=False` when one already
     exists, e.g. a signup invoiced at payment) and a refund of `refund_of` gets a credit note.
+    With `buyer` (a company) the invoice is a standard (B2B) one, cleared by ZATCA.
     """
     when = when or timezone.now()
     txn = Transaction.objects.create(
@@ -379,7 +395,7 @@ def record_transaction(member, description, tx_type, amount, method_label, gatew
     )
     from apps.zatca import service as zatca
     if amount > 0 and invoice:
-        zatca.after_commit(zatca.on_sale, txn.id)
+        zatca.after_commit(zatca.on_sale, txn.id, buyer.id if buyer is not None else None)
     elif amount < 0 and refund_of is not None:
         zatca.after_commit(zatca.on_refund, refund_of.id, txn.id)
     if email and amount > 0:

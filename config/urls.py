@@ -4,6 +4,7 @@ from django.conf import settings
 from django.conf.urls.static import static
 
 from apps.site_content.urls import public_urlpatterns as site_content_public
+from apps.zatca.urls import member_urlpatterns as zatca_member_urls
 
 
 urlpatterns = [
@@ -45,6 +46,7 @@ urlpatterns = [
 
     # ----- ZATCA e-invoicing: settings, go-live wizard, invoice log, retry cron -----
     path('api/admin/zatca/', include('apps.zatca.urls')),
+    path('api/zatca/', include((zatca_member_urls, 'zatca_member'))),
 ]
 
 

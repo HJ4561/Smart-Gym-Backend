@@ -5,6 +5,8 @@ ZATCA Phase 2 (e-invoicing) records.
   ZatcaDevice    the EGS unit: its key and ZATCA certificates (encrypted) and its invoice chain
   ZatcaDocument  one signed e-invoice, credit note or debit note, and what ZATCA said about it
   ZatcaEvent     audit log of every ZATCA action (who, when, what — never a secret)
+  BusinessCustomer  a VAT-registered company a member buys for — its sales get standard (B2B)
+                    tax invoices that ZATCA clears before they are handed over
 """
 from decimal import Decimal
 
@@ -13,7 +15,7 @@ from django.db import models
 from django.db.models import Q
 
 from . import environments
-from .xml_builder import FIRST_PIH, Seller
+from .xml_builder import FIRST_PIH, Buyer, Seller
 
 
 class ZatcaConfig(models.Model):
@@ -75,6 +77,7 @@ class ZatcaDevice(models.Model):
     status = models.CharField(max_length=12, choices=STATUS_CHOICES, default='onboarding', db_index=True)
     common_name = models.CharField(max_length=64)
     serial = models.CharField(max_length=120)                    # 1-<solution>|2-<model>|3-<uuid>
+    invoice_types = models.CharField(max_length=4, default='0100')   # standard (B2B), simplified (B2C), -, -
 
     private_key_enc = models.TextField()                         # encrypted PEM
     csr = models.TextField(blank=True)
@@ -107,10 +110,44 @@ class ZatcaDevice(models.Model):
     def __str__(self):
         return f'{self.common_name} ({self.environment}, {self.status})'
 
+    @property
+    def issues_b2b(self):
+        return self.invoice_types[:1] == '1'
+
+
+class BusinessCustomer(models.Model):
+    """A company a member buys for. Its details are copied onto each invoice when it is issued."""
+    owner = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.CASCADE, related_name='business_customers')
+    name = models.CharField(max_length=150)                      # legal name, as registered for VAT
+    vat_number = models.CharField(max_length=15)
+    crn = models.CharField(max_length=10, blank=True)
+    street = models.CharField(max_length=120)
+    building_number = models.CharField(max_length=4)
+    additional_number = models.CharField(max_length=4, blank=True)
+    district = models.CharField(max_length=80)
+    city = models.CharField(max_length=80)
+    postal_code = models.CharField(max_length=5)
+    is_active = models.BooleanField(default=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    FIELDS = ['name', 'vat_number', 'crn', 'street', 'building_number', 'additional_number', 'district', 'city',
+              'postal_code']
+
+    class Meta:
+        db_table = 'zatca_business_customers'
+        ordering = ['name']
+
+    def __str__(self):
+        return f'{self.name} ({self.vat_number})'
+
+    def snapshot(self):
+        return {f: getattr(self, f) for f in self.FIELDS}
+
 
 class ZatcaDocument(models.Model):
     TYPE_CHOICES = [('invoice', 'Tax invoice'), ('credit', 'Credit note'), ('debit', 'Debit note')]
-    STATUS_CHOICES = [('pending', 'Waiting to be sent'), ('reported', 'Reported'), ('rejected', 'Rejected')]
+    STATUS_CHOICES = [('pending', 'Waiting to be sent'), ('reported', 'Reported'), ('cleared', 'Cleared'),
+                      ('rejected', 'Rejected')]
 
     device = models.ForeignKey(ZatcaDevice, on_delete=models.PROTECT, related_name='documents')
     doc_type = models.CharField(max_length=8, choices=TYPE_CHOICES, default='invoice')
@@ -132,6 +169,10 @@ class ZatcaDocument(models.Model):
     payment_means = models.CharField(max_length=4, default='48')
     payment_label = models.CharField(max_length=60, blank=True)
     customer_name = models.CharField(max_length=150, blank=True)
+    buyer = models.ForeignKey(BusinessCustomer, on_delete=models.SET_NULL, null=True, blank=True,
+                              related_name='documents')
+    buyer_details = models.JSONField(default=dict, blank=True)   # frozen copy; non-empty = standard (B2B)
+    cleared_xml = models.TextField(blank=True)                   # ZATCA's stamped copy of a cleared invoice
 
     transaction = models.ForeignKey('payments.Transaction', on_delete=models.SET_NULL, null=True, blank=True,
                                     related_name='zatca_documents')
@@ -168,6 +209,13 @@ class ZatcaDocument(models.Model):
     @property
     def is_test(self):
         return not environments.get(self.device.environment)['legal']
+
+    @property
+    def is_standard(self):
+        return bool(self.buyer_details)
+
+    def buyer_spec(self):
+        return Buyer(**self.buyer_details) if self.buyer_details else None
 
 
 class ZatcaEvent(models.Model):

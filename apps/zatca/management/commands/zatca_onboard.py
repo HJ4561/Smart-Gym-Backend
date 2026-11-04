@@ -2,7 +2,7 @@
 Register a ZATCA device in one go — the same steps as the go-live wizard:
 new key + CSR → OTP → compliance certificate → 3 compliance checks → production certificate → active.
 
-    python manage.py zatca_onboard --environment sandbox --otp 123345
+    python manage.py zatca_onboard --environment sandbox --otp 123345 [--b2b]
 """
 from django.core.management.base import BaseCommand, CommandError
 
@@ -15,6 +15,7 @@ class Command(BaseCommand):
     def add_arguments(self, parser):
         parser.add_argument('--environment', default='sandbox', choices=list(environments.ENVIRONMENTS))
         parser.add_argument('--otp', required=True, help='6-digit OTP from the Fatoora portal (Sandbox: 123345)')
+        parser.add_argument('--b2b', action='store_true', help='Also issue company (standard) tax invoices.')
         parser.add_argument('--yes-production', action='store_true',
                             help='Required for production: those invoices are legally real.')
 
@@ -23,7 +24,7 @@ class Command(BaseCommand):
         if environments.get(env)['legal'] and not opts['yes_production']:
             raise CommandError('Production invoices are legally real — pass --yes-production to continue.')
         try:
-            device = service.start_device(env)
+            device = service.start_device(env, b2b=opts['b2b'])
             self.stdout.write(f'Device {device.common_name} created for {env}.')
             service.request_compliance(device, opts['otp'])
             self.stdout.write('Compliance certificate issued.')

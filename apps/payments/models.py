@@ -222,6 +222,9 @@ class PaymentIntent(models.Model):
     gym_class = models.ForeignKey('classes.GymClass', on_delete=models.SET_NULL, null=True, blank=True,
                                   related_name='+')
     pass_kind = models.CharField(max_length=10, blank=True, db_default='')     # class_pass: full | session
+    # A company the member is buying for → a standard (B2B) tax invoice, cleared by ZATCA.
+    business_customer = models.ForeignKey('zatca.BusinessCustomer', on_delete=models.SET_NULL, null=True,
+                                          blank=True, related_name='+')
     session_date = models.DateField(null=True, blank=True)                    # class_pass: kind=session
 
     # Moyasar

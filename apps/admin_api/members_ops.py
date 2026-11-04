@@ -208,8 +208,12 @@ def _extend(u, m, data, staff):
     note = (data.get('note') or '').strip()[:120]
     if method in DESK_METHODS:
         from apps.payments.gateway import record_transaction
+        from apps.zatca.models import BusinessCustomer
+        company = (BusinessCustomer.objects.filter(pk=data['business_customer_id'], owner=u, is_active=True).first()
+                   if str(data.get('business_customer_id') or '').isdigit() else None)   # a company tax invoice
         record_transaction(u, f'Membership extension — {months} mo (desk){" — " + note if note else ""}',
-                           'subscription', amount, DESK_METHODS[method], f'desk:{staff.id}:{timezone.now():%Y%m%d%H%M%S}')
+                           'subscription', amount, DESK_METHODS[method], f'desk:{staff.id}:{timezone.now():%Y%m%d%H%M%S}',
+                           buyer=company)
     logger.info('Membership of %s extended %s mo by %s (%s, SAR %s) %s', u.email, months, staff.email, method, amount, note)
     notify(u, 'payment', 'Membership extended', f'Your membership now runs until {m.expiry_date:%d %b %Y}.',
            icon='card_membership', action_label='View membership', action_path='/dashboard/payments')

@@ -6,6 +6,7 @@ secrets, OTPs or invoice contents.
   compliance_check(creds, hash, uuid, xml)
   production_csid(creds, request_id)      → production certificate (PCSID)
   report(creds, hash, uuid, xml)          → simplified (B2C) invoices, within 24 hours
+  clear(creds, hash, uuid, xml)           → standard (B2B) invoices, before they are handed over
 """
 import base64
 import json
@@ -97,3 +98,10 @@ def report(environment, token, secret, invoice_hash, uuid, xml, timeout=TIMEOUT)
     return _post(environment, '/invoices/reporting/single',
                  {'invoiceHash': invoice_hash, 'uuid': uuid, 'invoice': base64.b64encode(xml.encode()).decode()},
                  {'Authorization': _basic(token, secret), 'Clearance-Status': '0'}, timeout=timeout)
+
+
+def clear(environment, token, secret, invoice_hash, uuid, xml, timeout=TIMEOUT):
+    """Standard (B2B) invoices: ZATCA validates, stamps and returns the cleared invoice (clearedInvoice)."""
+    return _post(environment, '/invoices/clearance/single',
+                 {'invoiceHash': invoice_hash, 'uuid': uuid, 'invoice': base64.b64encode(xml.encode()).decode()},
+                 {'Authorization': _basic(token, secret), 'Clearance-Status': '1'}, timeout=timeout)

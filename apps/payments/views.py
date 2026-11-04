@@ -193,6 +193,7 @@ def checkout(request):
         | { "purpose": "video", "video_id": 7 }
         | { "purpose": "class_pass", "class_id": 4, "kind": "full" | "session", "date": "2026-11-03" }
         + optional "method": "locker_credit" to pay from the balance right away.
+        + optional "business_customer_id": a company the member saved → a standard (B2B) tax invoice.
     Returns the intent and, for card payments, the Moyasar form parameters.
     """
     try:

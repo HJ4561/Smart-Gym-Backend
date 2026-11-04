@@ -19,4 +19,12 @@ urlpatterns = [
     path('retry/', views.retry, name='retry'),
     path('events/', views.events, name='events'),
     path('cron/', views.cron, name='cron'),
+    path('companies/', views.companies, name='companies'),
+    path('companies/<int:company_id>/', views.company, name='company'),
+]
+
+# /api/zatca/ — for members
+member_urlpatterns = [
+    path('companies/', views.my_companies, name='my-companies'),
+    path('companies/<int:company_id>/', views.my_company, name='my-company'),
 ]

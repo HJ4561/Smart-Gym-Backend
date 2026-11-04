@@ -15,6 +15,10 @@ Admin API for ZATCA e-invoicing — /api/admin/zatca/
   POST  retry/                          resend everything that is due
   GET   events/                         audit log
   GET|POST cron/                        the retry job for a scheduler (X-Cron-Secret or Bearer token)
+  GET|POST companies/                   members' saved companies (B2B buyers) · ?q= ?member=
+  PATCH|DELETE companies/<id>/
+
+Members manage their own companies at /api/zatca/companies/ (member_views below).
 
 Secrets never leave the server: the device shows "set / not set", dates and certificate details only.
 """
@@ -28,11 +32,11 @@ from django.shortcuts import get_object_or_404
 from django.utils import timezone
 from rest_framework.decorators import api_view, authentication_classes, permission_classes
 from rest_framework.pagination import PageNumberPagination
-from rest_framework.permissions import AllowAny, BasePermission
+from rest_framework.permissions import AllowAny, BasePermission, IsAuthenticated
 from rest_framework.response import Response
 
 from . import crypto, environments, service
-from .models import ZatcaConfig, ZatcaDevice, ZatcaDocument, ZatcaEvent
+from .models import BusinessCustomer, ZatcaConfig, ZatcaDevice, ZatcaDocument, ZatcaEvent
 
 SETTINGS_FIELDS = ['seller_name_ar', 'seller_name_en', 'vat_number', 'crn', 'street', 'building_number',
                    'additional_number', 'district', 'city', 'postal_code', 'branch_name', 'business_category',
@@ -60,8 +64,8 @@ def _device_row(d):
         'private_key': 'set' if d.private_key_enc else 'not set',
         'compliance_certificate': 'set' if d.compliance_token_enc else 'not set',
         'production_certificate': 'set' if d.production_token_enc else 'not set',
-        'compliance_checks': results,
-        'checks_passed': len(results) >= 3 and all(v.get('ok') for v in results.values()),
+        'compliance_checks': results, 'invoice_types': d.invoice_types, 'b2b': d.issues_b2b,
+        'checks_passed': len(results) >= service._expected_checks(d) and all(v.get('ok') for v in results.values()),
         'certificate_issuer': d.certificate_issuer, 'certificate_expires_at': d.certificate_expires_at,
         'certificate_days_left': days, 'certificate_expiring': days is not None and days <= 30,
         'last_icv': d.last_icv, 'created_at': d.created_at, 'activated_at': d.activated_at,
@@ -76,7 +80,8 @@ def _doc_row(doc, full=False):
         'net': doc.net, 'vat': doc.vat, 'total': doc.total, 'status': doc.status,
         'status_label': doc.get_status_display(), 'attempts': doc.attempts, 'next_attempt_at': doc.next_attempt_at,
         'last_error': doc.last_error, 'has_warnings': bool(doc.zatca_warnings), 'reported_at': doc.reported_at,
-        'environment': doc.device.environment, 'test': doc.is_test,
+        'environment': doc.device.environment, 'test': doc.is_test, 'standard': doc.is_standard,
+        'buyer': doc.buyer_details.get('name', ''),
         'original': doc.original.number if doc.original_id else '',
         'late': doc.status == 'pending' and doc.issued_at < timezone.now() - service.LATE_AFTER,
     }
@@ -87,7 +92,8 @@ def _doc_row(doc, full=False):
             'payment_label': doc.payment_label, 'reason': doc.reason,
             'warnings': doc.zatca_warnings, 'errors': doc.zatca_errors,
             'transaction_id': doc.transaction.transaction_id if doc.transaction_id else '',
-            'registration_id': doc.registration_id,
+            'registration_id': doc.registration_id, 'buyer_details': doc.buyer_details,
+            'has_cleared_copy': bool(doc.cleared_xml),
             'credit_notes': [{'id': n.id, 'number': n.number, 'total': n.total, 'status': n.status}
                              for n in doc.notes.all()],
         })
@@ -104,7 +110,8 @@ def _status_payload():
         'environment_label': environments.get(cfg.environment)['label'], 'test_mode': cfg.is_test,
         'locked_fields': service.locked_fields(cfg), 'problems': service.validate_seller(cfg),
         'encryption_key_set': crypto.key_configured(), 'cron_secret_set': bool(settings.ZATCA_CRON_SECRET),
-        'live': service.is_on(cfg), 'device': _device_row(device), 'onboarding': _device_row(onboarding),
+        'live': service.is_on(cfg), 'b2b': service.b2b_on(cfg),
+        'device': _device_row(device), 'onboarding': _device_row(onboarding),
         'archived_devices': [_device_row(d) for d in ZatcaDevice.objects.filter(status='archived')[:10]],
         'summary': service.summary(),
         'environments': [{'value': k, 'label': v['label'], 'legal': v['legal']}
@@ -182,7 +189,7 @@ def onboard_start(request):
         return Response({'detail': 'Production invoices are legally real. Confirm to continue.'}, status=400)
 
     def go():
-        service.start_device(env, actor=request.user)
+        service.start_device(env, actor=request.user, b2b=request.data.get('b2b') is True)
         return Response(_status_payload(), status=201)
     return _step(go)
 
@@ -225,15 +232,17 @@ def documents(request):
     if st == 'late':
         qs = qs.filter(status='pending', issued_at__lt=timezone.now() - service.LATE_AFTER)
     elif st == 'warnings':
-        qs = qs.filter(status='reported').exclude(zatca_warnings=[])
-    elif st in ('pending', 'reported', 'rejected'):
+        qs = qs.filter(status__in=['reported', 'cleared']).exclude(zatca_warnings=[])
+    elif st == 'company':
+        qs = qs.exclude(buyer_details={})
+    elif st in ('pending', 'reported', 'cleared', 'rejected'):
         qs = qs.filter(status=st)
     if request.query_params.get('type') in ('invoice', 'credit', 'debit'):
         qs = qs.filter(doc_type=request.query_params['type'])
     q = (request.query_params.get('q') or '').strip()
     if q:
         qs = qs.filter(Q(number__icontains=q) | Q(customer_name__icontains=q)
-                       | Q(transaction__transaction_id__icontains=q))
+                       | Q(transaction__transaction_id__icontains=q) | Q(buyer_details__vat_number=q))
     paginator = PageNumberPagination()
     paginator.page_size = 25
     page = paginator.paginate_queryset(qs, request)
@@ -251,8 +260,9 @@ def document(request, doc_id):
 @permission_classes([IsGymAdmin])
 def document_xml(request, doc_id):
     doc = get_object_or_404(ZatcaDocument, pk=doc_id)
-    resp = HttpResponse(doc.signed_xml, content_type='application/xml; charset=utf-8')
-    resp['Content-Disposition'] = f'attachment; filename="{doc.number}.xml"'
+    cleared = request.query_params.get('copy') == 'cleared' and doc.cleared_xml
+    resp = HttpResponse(doc.cleared_xml if cleared else doc.signed_xml, content_type='application/xml; charset=utf-8')
+    resp['Content-Disposition'] = f'attachment; filename="{doc.number}{"-cleared" if cleared else ""}.xml"'
     return resp
 
 
@@ -297,3 +307,80 @@ def cron(request):
     if not hmac.compare_digest(given.encode(), secret.encode()):
         return Response({'detail': 'Not allowed.'}, status=403)
     return Response(service.retry_due())
+
+
+# ---------------------------------------------------------------- companies (B2B buyers)
+def _company_data(data):
+    return {f: str(data.get(f) or '').strip() for f in BusinessCustomer.FIELDS}
+
+
+def _save_company(company, data):
+    values = {**company.snapshot(), **{k: v for k, v in _company_data(data).items() if k in data}}
+    errors = service.validate_company(values)
+    if errors:
+        return Response(errors, status=400)
+    for f, v in values.items():
+        setattr(company, f, v)
+    company.save()
+    return None
+
+
+@api_view(['GET', 'POST'])
+@permission_classes([IsGymAdmin])
+def companies(request):
+    if request.method == 'POST':
+        from django.contrib.auth import get_user_model
+        owner = get_user_model().objects.filter(pk=request.data.get('owner_id'), role='member').first() \
+            if str(request.data.get('owner_id') or '').isdigit() else None
+        if owner is None:
+            return Response({'owner_id': 'Choose the member this company belongs to.'}, status=400)
+        company = BusinessCustomer(owner=owner)
+        error = _save_company(company, request.data)
+        if error:
+            return error
+        service.log('company_added', actor=request.user, company=company.name, member=owner.email)
+        return Response(service.company_row(company), status=201)
+    qs = BusinessCustomer.objects.select_related('owner').filter(is_active=True)
+    if str(request.query_params.get('member') or '').isdigit():
+        qs = qs.filter(owner_id=request.query_params['member'])
+    q = (request.query_params.get('q') or '').strip()
+    if q:
+        qs = qs.filter(Q(name__icontains=q) | Q(vat_number__icontains=q) | Q(owner__email__icontains=q)
+                       | Q(owner__first_name__icontains=q) | Q(owner__last_name__icontains=q))
+    return Response([service.company_row(c) for c in qs[:200]])
+
+
+@api_view(['PATCH', 'DELETE'])
+@permission_classes([IsGymAdmin])
+def company(request, company_id):
+    c = get_object_or_404(BusinessCustomer.objects.select_related('owner'), pk=company_id, is_active=True)
+    if request.method == 'DELETE':
+        c.is_active = False                          # invoices keep their frozen copy of the details
+        c.save(update_fields=['is_active'])
+        return Response(status=204)
+    return _save_company(c, request.data) or Response(service.company_row(c))
+
+
+# ---------------------------------------------------------------- the member's own companies
+@api_view(['GET', 'POST'])
+@permission_classes([IsAuthenticated])
+def my_companies(request):
+    """GET → {b2b, companies}: `b2b` false = company invoices aren't offered at checkout."""
+    if request.method == 'POST':
+        if not service.b2b_on():
+            return Response({'detail': 'Company tax invoices aren’t available right now.'}, status=400)
+        c = BusinessCustomer(owner=request.user)
+        return _save_company(c, request.data) or Response(service.company_row(c), status=201)
+    rows = BusinessCustomer.objects.filter(owner=request.user, is_active=True)
+    return Response({'b2b': service.b2b_on(), 'companies': [service.company_row(c) for c in rows]})
+
+
+@api_view(['PATCH', 'DELETE'])
+@permission_classes([IsAuthenticated])
+def my_company(request, company_id):
+    c = get_object_or_404(BusinessCustomer, pk=company_id, owner=request.user, is_active=True)
+    if request.method == 'DELETE':
+        c.is_active = False
+        c.save(update_fields=['is_active'])
+        return Response(status=204)
+    return _save_company(c, request.data) or Response(service.company_row(c))
