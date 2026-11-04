@@ -22,6 +22,9 @@ class User(AbstractUser):
     # While True the API only allows changing the password (see accounts.authentication).
     # db_default so code deployed before this column existed can still insert users.
     must_change_password = models.BooleanField(default=False, db_default=False)
+    # The language they last used the portal in (sent with every request) — for text sent outside one.
+    language = models.CharField(max_length=2, choices=[('en', 'English'), ('ar', 'Arabic')], default='en',
+                                db_default='en')
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
 

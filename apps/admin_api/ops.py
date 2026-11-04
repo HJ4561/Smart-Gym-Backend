@@ -14,6 +14,7 @@ from rest_framework.decorators import api_view, permission_classes
 from rest_framework.response import Response
 
 from apps.catalog.models import TrainerAvailability, TrainerProfile, TrainerSession
+from apps.core.i18n import ar_date, bi
 from apps.members.models import FacilityAddon, MembershipFacility
 from apps.notifications.service import notify
 from apps.payments import gateway
@@ -139,11 +140,15 @@ ORDER_FLOW = {
     'ready': ['completed'],
     'dispatched': ['completed'],
 }
-ORDER_NOTIFY = {
-    'preparing': ('Order being prepared', 'We are preparing order {n}.'),
-    'ready': ('Order ready for pickup', 'Order {n} is ready at the front desk.'),
-    'dispatched': ('Order in your locker', 'Order {n} is in locker {locker}.'),
-    'completed': ('Order collected', 'Thanks — order {n} is complete.'),
+ORDER_NOTIFY = {     # status → (title, message), each (English, Arabic)
+    'preparing': (('Order being prepared', 'جارٍ تجهيز الطلب'),
+                  ('We are preparing order {n}.', 'نقوم بتجهيز الطلب {n}.')),
+    'ready': (('Order ready for pickup', 'الطلب جاهز للاستلام'),
+              ('Order {n} is ready at the front desk.', 'الطلب {n} جاهز في مكتب الاستقبال.')),
+    'dispatched': (('Order in your locker', 'الطلب في خزانتك'),
+                   ('Order {n} is in locker {locker}.', 'الطلب {n} في الخزانة {locker}.')),
+    'completed': (('Order collected', 'تم استلام الطلب'),
+                  ('Thanks — order {n} is complete.', 'شكرًا — اكتمل الطلب {n}.')),
 }
 
 
@@ -227,7 +232,8 @@ def shop_order_status(request, order_number):
         o.save()
     if new in ORDER_NOTIFY:
         title, msg = ORDER_NOTIFY[new]
-        notify(o.member, 'shop', title, msg.format(n=o.order_number, locker=o.locker_number or ''),
+        parts = {'n': o.order_number, 'locker': o.locker_number or ''}
+        notify(o.member, 'shop', bi(*title), bi(msg[0].format(**parts), msg[1].format(**parts)),
                icon='shopping_bag', action_label='My orders', action_path='/dashboard/shop?tab=orders')
     return Response(_order_row(o))
 
@@ -456,10 +462,14 @@ def change_session_status(session_id, new, by, trainer_id=None):
                                        -s.amount_charged, 'Locker credit', f'session:{s.id}',
                                        refund_of=gateway.paid_transaction(trainer_session=s))
     if new == 'cancelled':
-        when = timezone.localtime(s.scheduled_at).strftime('%d %b %H:%M')
-        notify(s.member, 'trainer', f'Session cancelled by {by}',
-               f'Your session with {s.trainer.user.full_name} on {when} was cancelled'
-               + (f'; SAR {s.amount_charged} is back in your locker credit.' if s.amount_charged else '.'),
+        at = timezone.localtime(s.scheduled_at)
+        when = at.strftime('%d %b %H:%M')
+        by_ar = 'النادي' if by == 'the gym' else by
+        notify(s.member, 'trainer', bi(f'Session cancelled by {by}', f'ألغى {by_ar} الجلسة'),
+               bi(f'Your session with {s.trainer.user.full_name} on {when} was cancelled',
+                  f'أُلغيت جلستك مع {s.trainer.user.full_name} يوم {ar_date(at, with_year=False)} الساعة {at:%H:%M}')
+               + (bi(f'; SAR {s.amount_charged} is back in your locker credit.',
+                     f'، وأُعيد {s.amount_charged} ريال إلى رصيد خزانتك.') if s.amount_charged else bi('.', '.')),
                icon='event_busy', priority='high', action_label='Book again',
                action_path=f'/dashboard/trainers/{s.trainer_id}')
     return _session_row(s), None

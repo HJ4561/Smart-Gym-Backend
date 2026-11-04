@@ -13,7 +13,7 @@ from rest_framework.parsers import FormParser, MultiPartParser
 from rest_framework.response import Response
 
 from apps.accounts.models import User
-from apps.core.i18n import with_ar
+from apps.core.i18n import bi, with_ar
 from apps.core.validators import email_error
 from apps.notifications.service import notify
 from apps.nutrition.models import DexaScan, MealLog, NutritionistProfile, NutritionPlan, WaterIntake
@@ -192,9 +192,13 @@ def plan_update(request, plan_id):
     first_review = p.reviewed_at is None
     p.reviewed_at = timezone.now()
     p.save()
-    notify(p.member, 'nutrition', 'Your nutrition plan was reviewed' if first_review else 'Your nutrition plan was updated',
-           f'{p.nutritionist.user.full_name or "Your nutritionist"} set your daily targets: {p.target_calories} kcal, '
-           f'{p.target_protein_g} g protein.', icon='restaurant', action_label='Open my plan',
+    who = p.nutritionist.user.full_name
+    notify(p.member, 'nutrition',
+           bi('Your nutrition plan was reviewed', 'تمت مراجعة خطة تغذيتك') if first_review
+           else bi('Your nutrition plan was updated', 'تم تحديث خطة تغذيتك'),
+           bi(f'{who or "Your nutritionist"} set your daily targets: {p.target_calories} kcal, {p.target_protein_g} g protein.',
+              f'حدّد {who or "أخصائي التغذية"} أهدافك اليومية: {p.target_calories} سعرة حرارية، {p.target_protein_g} جم بروتين.'),
+           icon='restaurant', action_label='Open my plan',
            action_path='/dashboard/nutrition-plan')
     return Response(_plan_row(p))
 
@@ -266,6 +270,8 @@ def member_scans(request, member_id):
     if errors:
         return Response(errors, status=400)
     s = DexaScan.objects.create(member=member, notes=str(request.data.get('notes') or '')[:2000], **vals)
-    notify(member, 'nutrition', 'New body scan result', f'Body fat {s.body_fat_percent}% · lean mass {s.lean_mass_kg} kg.',
+    notify(member, 'nutrition', bi('New body scan result', 'نتيجة فحص جسم جديدة'),
+           bi(f'Body fat {s.body_fat_percent}% · lean mass {s.lean_mass_kg} kg.',
+              f'نسبة الدهون {s.body_fat_percent}% · الكتلة العضلية {s.lean_mass_kg} كجم.'),
            icon='monitor_weight', action_label='See results', action_path='/dashboard/nutritionists')
     return Response(_scan_row(s), status=201)

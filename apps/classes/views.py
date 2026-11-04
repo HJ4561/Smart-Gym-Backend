@@ -26,13 +26,19 @@ from rest_framework.response import Response
 
 from apps.admin_api.permissions import IsAdminUser
 from apps.catalog.models import TrainerProfile
-from apps.core.i18n import read_ar, with_ar
+from apps.core.i18n import DAYS_AR, ar, ar_day, bi, pick, read_ar, with_ar
 from apps.notifications.service import notify, notify_coach, notify_staff
 
 from . import passes
 from .models import ClassEnrollment, ClassPass, GymClass
 
 DAYS = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday']
+
+
+def _weekly(c):
+    """Mondays at 18:00 · أيام الاثنين الساعة 18:00"""
+    return bi(f'{DAYS[c.day_of_week]}s at {c.start_time:%H:%M}', f'أيام {DAYS_AR[c.day_of_week]} الساعة {c.start_time:%H:%M}')
+
 CATEGORIES = dict(GymClass.CATEGORY_CHOICES)
 LEVELS = dict(GymClass.LEVEL_CHOICES)
 BOOKED = ['enrolled', 'attended']
@@ -88,8 +94,9 @@ def _promote_waitlist(c):
         for e in c.enrollments.filter(status='waitlist').select_related('member').order_by('enrolled_at')[:max(free, 0)]:
             e.status = 'enrolled'
             e.save(update_fields=['status'])
-            notify(e.member, 'attendance', 'You’re in!',
-                   f'A spot opened in {c.name} ({DAYS[c.day_of_week]}s at {c.start_time:%H:%M}). It’s yours.',
+            w = _weekly(c)
+            notify(e.member, 'attendance', bi('You’re in!', 'حصلت على مكان!'),
+                   bi(f'A spot opened in {c.name} ({w.en}). It’s yours.', f'توفر مكان في {ar(c, "name")} ({w.ar}). إنه لك.'),
                    icon='event_available', action_label='My classes', action_path='/dashboard/classes')
 
 
@@ -154,9 +161,12 @@ def book_class(request, class_id):
             ClassEnrollment.objects.filter(id=e.id).update(enrolled_at=timezone.now())   # back of the queue
         else:
             ClassEnrollment.objects.create(gym_class=c, member=request.user, status=status)
-    msg = (f'Booked: {c.name}, every {DAYS[c.day_of_week]} at {c.start_time:%H:%M}.' if status == 'enrolled'
-           else f'{c.name} is full — you’re on the waitlist and we’ll tell you when a spot opens.')
-    return Response({'detail': msg, 'status': status, 'class': _row(c)})
+    msg = (bi(f'Booked: {c.name}, every {DAYS[c.day_of_week]} at {c.start_time:%H:%M}.',
+              f'تم الحجز: {ar(c, "name")}، كل {DAYS_AR[c.day_of_week]} الساعة {c.start_time:%H:%M}.')
+           if status == 'enrolled'
+           else bi(f'{c.name} is full — you’re on the waitlist and we’ll tell you when a spot opens.',
+                   f'{ar(c, "name")} ممتلئة — أنت في قائمة الانتظار وسنخبرك عند توفر مكان.'))
+    return Response({'detail': pick(msg), 'status': status, 'class': _row(c)})
 
 
 @api_view(['POST'])
@@ -180,10 +190,12 @@ def cancel_class(request, class_id):
     if was_booked:
         _promote_waitlist(c)
     who = request.user.full_name or request.user.email
-    _tell_team(c, 'Class booking cancelled',
-               f'{who} cancelled their {"spot" if was_booked else "waitlist place"} in {c.name} '
-               f'({DAYS[c.day_of_week]}s at {c.start_time:%H:%M}).')
-    return Response({'detail': f'Cancelled — you’re no longer booked into {c.name}.'})
+    w = _weekly(c)
+    _tell_team(c, bi('Class booking cancelled', 'تم إلغاء حجز في حصة'),
+               bi(f'{who} cancelled their {"spot" if was_booked else "waitlist place"} in {c.name} ({w.en}).',
+                  f'ألغى {who} {"مكانه" if was_booked else "مكانه في قائمة الانتظار"} في {ar(c, "name")} ({w.ar}).'))
+    return Response({'detail': pick(bi(f'Cancelled — you’re no longer booked into {c.name}.',
+                                       f'تم الإلغاء — لم تعد محجوزًا في {ar(c, "name")}.'))})
 
 
 REFUND_HOURS = 24
@@ -223,11 +235,14 @@ def _cancel_paid(request, c):
                            'Locker credit', f'class-pass:{p.id}',
                            refund_of=paid_transaction(member=request.user, purpose='class_pass', gym_class=c,
                                                       pass_kind='session', session_date=day))
-    notify(request.user, 'attendance', 'Session cancelled', f'SAR {p.amount} for {c.name} on {day:%a %d %b} is back '
-           'in your locker credit.', icon='event_busy', action_label='View payments', action_path='/dashboard/payments')
-    _tell_team(c, 'Class session cancelled',
-               f'{request.user.full_name or request.user.email} cancelled their paid session of {c.name} on '
-               f'{day:%a %d %b} (SAR {p.amount} refunded to locker credit).')
+    notify(request.user, 'attendance', bi('Session cancelled', 'تم إلغاء الجلسة'),
+           bi(f'SAR {p.amount} for {c.name} on {day:%a %d %b} is back in your locker credit.',
+              f'أُعيد {p.amount} ريال مقابل {ar(c, "name")} يوم {ar_day(day)} إلى رصيد خزانتك.'),
+           icon='event_busy', action_label='View payments', action_path='/dashboard/payments')
+    who = request.user.full_name or request.user.email
+    _tell_team(c, bi('Class session cancelled', 'تم إلغاء جلسة حصة'),
+               bi(f'{who} cancelled their paid session of {c.name} on {day:%a %d %b} (SAR {p.amount} refunded to locker credit).',
+                  f'ألغى {who} جلسته المدفوعة في {ar(c, "name")} يوم {ar_day(day)} (أُعيد {p.amount} ريال إلى رصيد الخزانة).'))
     return Response({'detail': f'Cancelled — SAR {p.amount} is back in your locker credit.'})
 
 
@@ -403,11 +418,14 @@ def admin_class_detail(request, class_id):
         if ClassPass.objects.filter(gym_class=c).exists():
             return Response({'detail': 'This class has payment history — pause it instead of deleting it.'}, status=400)
         for e in c.enrollments.filter(status__in=BOOKED + ['waitlist']).select_related('member'):
-            notify(e.member, 'attendance', 'Class cancelled',
-                   f'{c.name} on {DAYS[c.day_of_week]}s at {c.start_time:%H:%M} has been removed from the timetable.',
+            w = _weekly(c)
+            notify(e.member, 'attendance', bi('Class cancelled', 'تم إلغاء الحصة'),
+                   bi(f'{c.name} on {w.en} has been removed from the timetable.',
+                      f'أُزيلت {ar(c, "name")} ({w.ar}) من الجدول.'),
                    icon='event_busy', action_label='Find another class', action_path='/dashboard/classes')
-        _tell_team(c, 'Class cancelled', f'{request.user.full_name or request.user.email} removed {c.name} '
-                   f'({DAYS[c.day_of_week]}s at {c.start_time:%H:%M}) from the timetable.')
+        w, who = _weekly(c), request.user.full_name or request.user.email
+        _tell_team(c, bi('Class cancelled', 'تم إلغاء الحصة'),
+                   bi(f'{who} removed {c.name} ({w.en}) from the timetable.', f'أزال {who} {ar(c, "name")} ({w.ar}) من الجدول.'))
         c.delete()
         return Response(status=204)
     before = (c.day_of_week, c.start_time, c.is_active)
@@ -424,12 +442,14 @@ def admin_class_detail(request, class_id):
     c.save()
     _promote_waitlist(c)
     if (c.day_of_week, c.start_time, c.is_active) != before:
-        what = (f'{c.name} is paused for now.' if not c.is_active else
-                f'{c.name} now runs on {DAYS[c.day_of_week]}s at {c.start_time:%H:%M}.')
+        w = _weekly(c)
+        what = (bi(f'{c.name} is paused for now.', f'{ar(c, "name")} متوقفة مؤقتًا.') if not c.is_active else
+                bi(f'{c.name} now runs on {w.en}.', f'تُقام {ar(c, "name")} الآن {w.ar}.'))
+        changed = bi('Class timetable changed', 'تغيّر جدول الحصة')
         for e in c.enrollments.filter(status__in=BOOKED + ['waitlist']).select_related('member'):
-            notify(e.member, 'attendance', 'Class timetable changed', what, icon='event_note',
+            notify(e.member, 'attendance', changed, what, icon='event_note',
                    action_label='My classes', action_path='/dashboard/classes')
-        _tell_team(c, 'Class paused' if not c.is_active else 'Class timetable changed', what, staff=False)
+        _tell_team(c, bi('Class paused', 'تم إيقاف الحصة مؤقتًا') if not c.is_active else changed, what, staff=False)
     return Response(_row(_annotated(GymClass.objects.filter(id=c.id)).get()))
 
 
@@ -463,14 +483,16 @@ def admin_roster_remove(request, class_id, enrollment_id):
     was_booked = e.status in BOOKED
     e.status = 'cancelled'
     e.save(update_fields=['status'])
-    notify(e.member, 'attendance', 'Class booking removed',
-           f'The gym removed your booking for {e.gym_class.name}. Contact the front desk with any questions.',
+    notify(e.member, 'attendance', bi('Class booking removed', 'تمت إزالة حجزك في الحصة'),
+           bi(f'The gym removed your booking for {e.gym_class.name}. Contact the front desk with any questions.',
+              f'أزال النادي حجزك في {ar(e.gym_class, "name")}. تواصل مع مكتب الاستقبال لأي استفسار.'),
            icon='event_busy', action_label='My classes', action_path='/dashboard/classes')
     if was_booked:
         _promote_waitlist(e.gym_class)
-    _tell_team(e.gym_class, 'Class booking cancelled',
-               f'{e.member.full_name or e.member.email} was removed from {e.gym_class.name} by '
-               f'{request.user.full_name or request.user.email}.')
+    member, by = e.member.full_name or e.member.email, request.user.full_name or request.user.email
+    _tell_team(e.gym_class, bi('Class booking cancelled', 'تم إلغاء حجز في حصة'),
+               bi(f'{member} was removed from {e.gym_class.name} by {by}.',
+                  f'أزال {by} {member} من {ar(e.gym_class, "name")}.'))
     return Response({'detail': f'{e.member.full_name or e.member.email} removed.'})
 
 

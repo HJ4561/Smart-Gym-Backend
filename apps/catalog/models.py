@@ -309,13 +309,17 @@ class TrainerReview(models.Model):
 
 def enrollment_started(enrollment):
     """Tell the coach their course has a new student and the gym about the purchase."""
+    from apps.core.i18n import ar, bi
     from apps.notifications.service import notify_coach, notify_staff
     course, member = enrollment.course, enrollment.member
     who = member.full_name or member.email
     paid = enrollment.amount_paid or 0
-    notify_coach(course.trainer, 'course', 'A member started your course',
-                 f'{who} enrolled in “{course.title}” and is starting Day 1.', icon='school',
+    title_ar = ar(course, 'title')
+    notify_coach(course.trainer, 'course', bi('A member started your course', 'بدأ عضو دورتك'),
+                 bi(f'{who} enrolled in “{course.title}” and is starting Day 1.',
+                    f'اشترك {who} في «{title_ar}» ويبدأ اليوم الأول.'), icon='school',
                  action_label='My students', action_path='/coach/students')
-    notify_staff('course', 'Course purchased' if paid > 0 else 'Course enrolment',
-                 f'{who} enrolled in “{course.title}”' + (f' — paid SAR {paid}.' if paid > 0 else ' (free).'),
+    notify_staff('course', bi('Course purchased', 'تم شراء دورة') if paid > 0 else bi('Course enrolment', 'اشتراك في دورة'),
+                 bi(f'{who} enrolled in “{course.title}”' + (f' — paid SAR {paid}.' if paid > 0 else ' (free).'),
+                    f'اشترك {who} في «{title_ar}»' + (f' — دفع {paid} ريال.' if paid > 0 else ' (مجانًا).')),
                  icon='school', action_label='Open courses', action_path='/admin/trainers?tab=courses')

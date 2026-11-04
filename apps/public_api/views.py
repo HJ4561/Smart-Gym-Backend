@@ -671,8 +671,11 @@ def admin_check_in(request, member_id):
     from apps.attendance.views import _update_streak_milestones
     from apps.notifications.service import notify
     _update_streak_milestones(member)
-    limit_note = f' Your session limit is {limit} minutes.' if limit else ''
-    notify(member, 'attendance', 'Checked in', f'Welcome in! Checked in at {timezone.localtime(ci.check_in_time):%H:%M}.{limit_note}',
+    from apps.core.i18n import bi
+    at = timezone.localtime(ci.check_in_time)
+    notify(member, 'attendance', bi('Checked in', 'تم تسجيل الدخول'),
+           bi(f'Welcome in! Checked in at {at:%H:%M}.' + (f' Your session limit is {limit} minutes.' if limit else ''),
+              f'أهلًا بك! سُجّل دخولك الساعة {at:%H:%M}.' + (f' حد جلستك {limit} دقيقة.' if limit else '')),
            icon='login', action_label='Attendance', action_path='/dashboard/attendance')
 
     return Response(CheckInSerializer(ci).data, status=status.HTTP_201_CREATED)

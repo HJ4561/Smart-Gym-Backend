@@ -331,8 +331,10 @@ def cancel_session(request, session_id):
                                'Locker credit', f'session:{session.id}',
                                refund_of=paid_transaction(trainer_session=session))
     if refund > 0:
-        notify(request.user, 'trainer', 'Session cancelled',
-               f'SAR {refund} was refunded to your locker credit.', icon='event_busy',
+        from apps.core.i18n import bi
+        notify(request.user, 'trainer', bi('Session cancelled', 'تم إلغاء الجلسة'),
+               bi(f'SAR {refund} was refunded to your locker credit.', f'أُعيد {refund} ريال إلى رصيد خزانتك.'),
+               icon='event_busy',
                action_label='View payments', action_path='/dashboard/payments')
     return Response(TrainerSessionSerializer(session).data)
 

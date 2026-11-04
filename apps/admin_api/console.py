@@ -31,54 +31,64 @@ def alerts(request):
     now = timezone.now()
     items = []
 
+    from apps.core.i18n import bi, pick
+
     def add(key, icon, count, title, message, path, priority='normal'):
         if count:
-            items.append({'key': key, 'icon': icon, 'count': count, 'title': title,
-                          'message': message, 'path': path, 'priority': priority})
+            items.append({'key': key, 'icon': icon, 'count': count, 'title': pick(title),
+                          'message': pick(message), 'path': path, 'priority': priority})
 
     from .insights import with_highlight
     ids = list(Reg.objects.filter(status=Reg.STATUS_PAID).values_list('id', flat=True))
     paid_regs = len(ids)
-    add('registrations', 'how_to_reg', paid_regs, 'Registrations to approve',
-        f'{paid_regs} paid signup{"s" if paid_regs != 1 else ""} waiting for approval.',
+    add('registrations', 'how_to_reg', paid_regs, bi('Registrations to approve', 'تسجيلات بانتظار الموافقة'),
+        bi(f'{paid_regs} paid signup{"s" if paid_regs != 1 else ""} waiting for approval.',
+           f'{paid_regs} تسجيل مدفوع بانتظار الموافقة.'),
         with_highlight('/admin/registrations', ids), 'high')
 
     ids = list(PaymentIntent.objects.filter(status='review').values_list('id', flat=True))
     review = len(ids)
-    add('payments', 'report', review, 'Payments to review',
-        f'{review} payment{"s" if review != 1 else ""} taken but not delivered — refund or follow up.',
+    add('payments', 'report', review, bi('Payments to review', 'دفعات تحتاج مراجعة'),
+        bi(f'{review} payment{"s" if review != 1 else ""} taken but not delivered — refund or follow up.',
+           f'{review} دفعة مُحصّلة لم تُسلَّم — استرد المبلغ أو تابع.'),
         with_highlight('/admin/shop-orders?tab=review', ids), 'high')
 
     to_fulfil = Order.objects.filter(status__in=['paid', 'preparing']).count()
-    add('orders', 'shopping_bag', to_fulfil, 'Shop orders to prepare',
-        f'{to_fulfil} paid order{"s" if to_fulfil != 1 else ""} waiting to be prepared.', '/admin/shop-orders')
+    add('orders', 'shopping_bag', to_fulfil, bi('Shop orders to prepare', 'طلبات متجر للتجهيز'),
+        bi(f'{to_fulfil} paid order{"s" if to_fulfil != 1 else ""} waiting to be prepared.',
+           f'{to_fulfil} طلب مدفوع بانتظار التجهيز.'), '/admin/shop-orders')
 
     sessions_today = TrainerSession.objects.filter(status='scheduled', scheduled_at__date=today,
                                                    scheduled_at__gte=now - timedelta(hours=1)).count()
-    add('sessions', 'event_available', sessions_today, 'Trainer sessions today',
-        f'{sessions_today} 1:1 session{"s" if sessions_today != 1 else ""} still to run today.', '/admin/trainer-hours')
+    add('sessions', 'event_available', sessions_today, bi('Trainer sessions today', 'جلسات المدربين اليوم'),
+        bi(f'{sessions_today} 1:1 session{"s" if sessions_today != 1 else ""} still to run today.',
+           f'{sessions_today} جلسة فردية متبقية اليوم.'), '/admin/trainer-hours')
 
     inbox = ContactMessage.objects.filter(status=ContactMessage.STATUS_NEW).count()
-    add('inbox', 'mail', inbox, 'Website messages',
-        f'{inbox} unread message{"s" if inbox != 1 else ""} from the contact form.', '/admin/site-inbox')
+    add('inbox', 'mail', inbox, bi('Website messages', 'رسائل الموقع'),
+        bi(f'{inbox} unread message{"s" if inbox != 1 else ""} from the contact form.',
+           f'{inbox} رسالة غير مقروءة من نموذج التواصل.'), '/admin/site-inbox')
 
     from apps.nutrition.models import NutritionPlan
     plans = NutritionPlan.objects.filter(status='active', reviewed_at__isnull=True).count()
-    add('nutrition', 'restaurant', plans, 'Nutrition plans to review',
-        f'{plans} member{"s" if plans != 1 else ""} asked for a plan and {"are" if plans != 1 else "is"} on starter targets.',
+    add('nutrition', 'restaurant', plans, bi('Nutrition plans to review', 'خطط تغذية للمراجعة'),
+        bi(f'{plans} member{"s" if plans != 1 else ""} asked for a plan and {"are" if plans != 1 else "is"} on starter targets.',
+           f'{plans} عضو طلب خطة وما زال على الأهداف المبدئية.'),
         '/admin/nutrition')
 
     from apps.catalog.models import Course
     pending = Course.objects.filter(status='pending').count()
-    add('courses', 'rate_review', pending, 'Courses to review',
-        f'{pending} course{"s" if pending != 1 else ""} from coaches waiting to be published or sent back.',
+    add('courses', 'rate_review', pending, bi('Courses to review', 'دورات للمراجعة'),
+        bi(f'{pending} course{"s" if pending != 1 else ""} from coaches waiting to be published or sent back.',
+           f'{pending} دورة من المدربين بانتظار النشر أو الإعادة.'),
         '/admin/trainers?tab=courses&status=pending', 'high')
 
     ids = list(Membership.objects.filter(status__in=['active', 'expiring'], expiry_date__gt=today,
                                          expiry_date__lte=today + timedelta(days=7)).values_list('member_id', flat=True))
     expiring = len(ids)
-    add('expiring', 'hourglass_bottom', expiring, 'Memberships ending this week',
-        f'{expiring} member{"s" if expiring != 1 else ""} expire within 7 days.', with_highlight('/admin/members', ids))
+    add('expiring', 'hourglass_bottom', expiring, bi('Memberships ending this week', 'عضويات تنتهي هذا الأسبوع'),
+        bi(f'{expiring} member{"s" if expiring != 1 else ""} expire within 7 days.',
+           f'{expiring} عضو تنتهي عضويته خلال 7 أيام.'), with_highlight('/admin/members', ids))
 
     return Response({'total': sum(i['count'] for i in items), 'items': items})
 

@@ -66,6 +66,7 @@ MIDDLEWARE = [
     'django.middleware.security.SecurityMiddleware',
     'whitenoise.middleware.WhiteNoiseMiddleware',      # <-- must be here
     'django.contrib.sessions.middleware.SessionMiddleware',
+    'apps.core.middleware.LanguageMiddleware',         # Accept-Language: ar|en from the portals
     'django.middleware.common.CommonMiddleware',
     'django.middleware.csrf.CsrfViewMiddleware',
     'django.contrib.auth.middleware.AuthenticationMiddleware',
@@ -129,6 +130,7 @@ AUTH_PASSWORD_VALIDATORS = [
 # INTERNATIONALIZATION
 # ============================================
 LANGUAGE_CODE = 'en-us'
+LANGUAGES = [('en', 'English'), ('ar', 'العربية')]
 TIME_ZONE = config('TIME_ZONE', default='Asia/Riyadh')   # gym-local dates, trainer hours, check-in days
 GYM_CAPACITY = config('GYM_CAPACITY', default=0, cast=int)   # 0 = sum of active facility capacities
 SHOP_VAT_RATE = config('SHOP_VAT_RATE', default='0.15')   # Saudi VAT
@@ -251,7 +253,7 @@ REST_FRAMEWORK = {
         'contact': config('CONTACT_THROTTLE_RATE', default='5/hour'),
     },
     'DEFAULT_RENDERER_CLASSES': (
-        'rest_framework.renderers.JSONRenderer',
+        'apps.core.renderers.BilingualJSONRenderer',      # messages in the reader's language
     ),
 }
 

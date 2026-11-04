@@ -33,6 +33,8 @@ class Notification(models.Model):
     icon = models.CharField(max_length=40, default='notifications')
     title = models.CharField(max_length=200)
     message = models.TextField()
+    title_ar = models.CharField(max_length=200, blank=True, db_default='')   # the same notification in Arabic
+    message_ar = models.TextField(blank=True, db_default='')
 
     # Action
     action_label = models.CharField(max_length=80, blank=True)

@@ -11,6 +11,8 @@ import logging
 from rest_framework.decorators import api_view, permission_classes
 from rest_framework.response import Response
 
+from apps.core.i18n import bi
+
 from .permissions import IsAdminUser
 
 logger = logging.getLogger(__name__)
@@ -114,21 +116,25 @@ def security_settings(request):
         return Response({'password': 'Your password isn’t right.'}, status=400)
     s = SystemSettings.get_solo()
     sec = dict(s.security or {})
-    changed = []
-    for key, label in (('two_factor_enabled', '2-step verification'),
-                       ('two_factor_required_for_staff', '2-step verification required for staff and coaches')):
+    changed, changed_ar = [], []
+    for key, label, label_ar in (('two_factor_enabled', '2-step verification', 'التحقق بخطوتين'),
+                                 ('two_factor_required_for_staff', '2-step verification required for staff and coaches',
+                                  'إلزام الموظفين والمدربين بالتحقق بخطوتين')):
         if key in request.data:
             value = bool(request.data[key])
             before = sec.get(key, True) is not False
             if before != value:
                 changed.append(f'{label}: {"on" if value else "off"}')
+                changed_ar.append(f'{label_ar}: {"مفعّل" if value else "متوقف"}')
             sec[key] = value
     s.security = sec
     s.updated_by = request.user
     s.save(update_fields=['security', 'updated_by', 'updated_at'])
     if changed:
         logger.warning('Security settings changed by %s: %s', request.user.email, '; '.join(changed))
-        notify_staff('system', 'Sign-in security changed', f'{request.user.full_name or request.user.email} set '
-                     + '; '.join(changed) + '.', icon='shield', priority='high',
+        who = request.user.full_name or request.user.email
+        notify_staff('system', bi('Sign-in security changed', 'تم تغيير أمان تسجيل الدخول'),
+                     bi(f'{who} set ' + '; '.join(changed) + '.',
+                        f'غيّر {who}: ' + '؛ '.join(changed_ar) + '.'), icon='shield', priority='high',
                      action_label='Open settings', action_path='/admin/settings')
     return Response(_security())

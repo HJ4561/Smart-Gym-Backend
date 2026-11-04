@@ -20,7 +20,7 @@ from rest_framework.response import Response
 
 from apps.accounts.models import User
 from apps.catalog.models import Course, CourseModule, Enrollment, TrainerProfile, TrainerSession
-from apps.core.i18n import read_ar, with_ar
+from apps.core.i18n import ar, bi, read_ar, with_ar
 from apps.core.validators import duplicate_error, email_error
 from apps.site_content.serializers import SiteImageUploadSerializer
 
@@ -563,14 +563,19 @@ def _tell_coach(c, status_before):
     if c.status == status_before:
         return
     if c.status == 'published':
-        notify_coach(c.trainer, 'course', 'Your course is live', f'“{c.title}” is published — members can join it now.',
+        notify_coach(c.trainer, 'course', bi('Your course is live', 'دورتك منشورة الآن'),
+                     bi(f'“{c.title}” is published — members can join it now.',
+                        f'نُشرت «{ar(c, "title")}» — يمكن للأعضاء الاشتراك فيها الآن.'),
                      icon='rocket_launch', action_label='Open course', action_path=f'/coach/courses/{c.id}')
     elif c.status == 'draft' and status_before == 'pending':
-        notify_coach(c.trainer, 'course', 'Changes requested on your course',
-                     f'The gym sent “{c.title}” back: {c.review_note}', icon='rate_review', priority='high',
+        notify_coach(c.trainer, 'course', bi('Changes requested on your course', 'مطلوب تعديلات على دورتك'),
+                     bi(f'The gym sent “{c.title}” back: {c.review_note}',
+                        f'أعاد النادي «{ar(c, "title")}» إليك: {c.review_note}'), icon='rate_review', priority='high',
                      action_label='Edit course', action_path=f'/coach/courses/{c.id}')
     elif c.status == 'archived':
-        notify_coach(c.trainer, 'course', 'Course archived', f'“{c.title}” was taken off the member portal by the gym.',
+        notify_coach(c.trainer, 'course', bi('Course archived', 'تمت أرشفة الدورة'),
+                     bi(f'“{c.title}” was taken off the member portal by the gym.',
+                        f'أزال النادي «{ar(c, "title")}» من بوابة الأعضاء.'),
                      icon='archive', action_label='My courses', action_path='/coach/courses')
 
 

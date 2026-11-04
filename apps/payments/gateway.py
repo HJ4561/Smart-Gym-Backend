@@ -26,6 +26,7 @@ from django.db import transaction
 from django.db.models import F
 from django.utils import timezone
 
+from apps.core.i18n import DAYS_AR, ar, ar_date, ar_day, bi
 from apps.notifications.service import notify
 from apps.public_api import moyasar
 from apps.public_api.moyasar import CURRENCY, PAID_STATUSES, MoyasarError, _redact
@@ -364,9 +365,11 @@ def _fulfil(intent, method_label):
         intent.status = 'review'
         intent.failure_reason = f'Needs manual review: {note}'[:255]
         logger.error('Intent #%s paid but not fulfilled: %s', intent.id, note)
-        notify(intent.member, 'payment', 'Payment received — our team will follow up',
-               f'We received SAR {intent.amount} for "{intent.description}" but {note}. '
-               'Our team will contact you to rebook or refund.', icon='report', priority='high',
+        notify(intent.member, 'payment', bi('Payment received — our team will follow up', 'استلمنا دفعتك — سيتابع فريقنا معك'),
+               bi(f'We received SAR {intent.amount} for "{intent.description}" but {note}. '
+                  'Our team will contact you to rebook or refund.',
+                  f'استلمنا {intent.amount} ريال مقابل «{intent.description}» لكن تعذّر إتمام الطلب. '
+                  'سيتواصل فريقنا معك لإعادة الحجز أو استرداد المبلغ.'), icon='report', priority='high',
                action_label='View payments', action_path='/dashboard/payments')
     intent.save()
 
@@ -414,7 +417,8 @@ def _fulfil_topup(intent):
     credit, _ = LockerCredit.objects.select_for_update().get_or_create(member=intent.member)
     # Money was taken, so it is always credited in full (even if another top-up raced past the cap).
     LockerCredit.objects.filter(id=credit.id).update(balance=F('balance') + intent.amount)
-    notify(intent.member, 'payment', 'Locker credit added', f'SAR {intent.amount} was added to your locker credit.',
+    notify(intent.member, 'payment', bi('Locker credit added', 'تمت إضافة رصيد الخزانة'),
+           bi(f'SAR {intent.amount} was added to your locker credit.', f'أُضيف {intent.amount} ريال إلى رصيد خزانتك.'),
            icon='account_balance_wallet', action_label='View balance', action_path='/dashboard/payments')
     return True, ''
 
@@ -430,9 +434,11 @@ def _fulfil_order(intent):
         return False, f'order {getattr(order, "order_number", "?")} is no longer awaiting payment'
     order.status = 'paid'
     order.save(update_fields=['status'])
-    where = 'the counter' if order.delivery_method == 'counter' else f'locker {order.locker_number}'
-    notify(intent.member, 'shop', f'Order {order.order_number} paid',
-           f'Thanks! We are preparing your order — collect it from {where}.', icon='shopping_bag',
+    where = (bi('the counter', 'الكاونتر') if order.delivery_method == 'counter'
+             else bi(f'locker {order.locker_number}', f'الخزانة {order.locker_number}'))
+    notify(intent.member, 'shop', bi(f'Order {order.order_number} paid', f'تم دفع الطلب {order.order_number}'),
+           bi(f'Thanks! We are preparing your order — collect it from {where.en}.',
+              f'شكرًا! نقوم بتجهيز طلبك — استلمه من {where.ar}.'), icon='shopping_bag',
            action_label='View orders', action_path='/dashboard/shop?tab=orders')
     return True, ''
 
@@ -456,13 +462,17 @@ def confirm_session(session):
     """The session is on: paid, or free (the trainer's rate is 0). Tells the member and the coach."""
     session.status = 'scheduled'
     session.save(update_fields=['status'])
-    when = timezone.localtime(session.scheduled_at).strftime('%A %d %b, %H:%M')
-    notify(session.member, 'trainer', 'Session booked',
-           f'Your session with {session.trainer.user.full_name} is confirmed for {when}.', icon='event_available',
-           action_label='My sessions', action_path='/dashboard/my-sessions')
+    at = timezone.localtime(session.scheduled_at)
+    when = bi(at.strftime('%A %d %b, %H:%M'), f'{ar_day(at)}، الساعة {at:%H:%M}')
+    coach = session.trainer.user.full_name
+    notify(session.member, 'trainer', bi('Session booked', 'تم حجز الجلسة'),
+           bi(f'Your session with {coach} is confirmed for {when.en}.', f'تم تأكيد جلستك مع {coach} يوم {when.ar}.'),
+           icon='event_available', action_label='My sessions', action_path='/dashboard/my-sessions')
     from apps.notifications.service import notify_coach
-    notify_coach(session.trainer, 'trainer', 'New 1-on-1 booking',
-                 f'{session.member.full_name or "A member"} booked a session with you on {when}.', icon='event_available',
+    member = session.member.full_name
+    notify_coach(session.trainer, 'trainer', bi('New 1-on-1 booking', 'حجز جلسة فردية جديد'),
+                 bi(f'{member or "A member"} booked a session with you on {when.en}.',
+                    f'حجز {member or "أحد الأعضاء"} جلسة معك يوم {when.ar}.'), icon='event_available',
                  action_label='My sessions', action_path='/coach/sessions')
 
 
@@ -485,9 +495,11 @@ def activate_plan(plan):
     NutritionPlan.objects.filter(member=plan.member, status='active', nutritionist=plan.nutritionist)         .exclude(id=plan.id).update(status='archived')
     plan.status = 'active'
     plan.save(update_fields=['status', 'updated_at'])
-    name = plan.nutritionist.user.full_name or 'your nutritionist'
-    notify(plan.member, 'nutrition', 'Nutrition plan started',
-           f'Your plan with {name} is active. Starter targets are set; {name} will review and adjust them.',
+    full = plan.nutritionist.user.full_name
+    name = full or 'your nutritionist'
+    notify(plan.member, 'nutrition', bi('Nutrition plan started', 'بدأت خطة التغذية'),
+           bi(f'Your plan with {name} is active. Starter targets are set; {name} will review and adjust them.',
+              f'خطتك مع {full or "أخصائي التغذية"} فعّالة. حُددت أهداف مبدئية وسيراجعها {full or "أخصائي التغذية"} ويعدّلها.'),
            icon='restaurant', action_label='Open my plan', action_path='/dashboard/nutrition-plan')
 
 
@@ -501,7 +513,8 @@ def _fulfil_course(intent):
                                            payment_ref=intent.moyasar_payment_id or f'credit:{intent.id}')
     type(intent.course).objects.filter(id=intent.course_id).update(total_enrolled=F('total_enrolled') + 1)
     enrollment_started(enrollment)
-    notify(intent.member, 'course', 'Enrolled', f'You are enrolled in "{intent.course.title}". Enjoy!',
+    notify(intent.member, 'course', bi('Enrolled', 'تم الاشتراك'),
+           bi(f'You are enrolled in "{intent.course.title}". Enjoy!', f'أنت مشترك في «{ar(intent.course, "title")}». استمتع!'),
            icon='school', action_label='Open player', action_path=f'/dashboard/player/{intent.course_id}')
     return True, ''
 
@@ -516,12 +529,15 @@ def _fulfil_video(intent):
                                                      defaults={'amount': intent.amount})
     if not created:
         return False, 'you had already bought this video'
-    notify(intent.member, 'workout', 'Video unlocked',
-           f'“{video.title}” for {video.exercise.name} is yours to watch any time.', icon='smart_display',
+    notify(intent.member, 'workout', bi('Video unlocked', 'تم فتح الفيديو'),
+           bi(f'“{video.title}” for {video.exercise.name} is yours to watch any time.',
+              f'«{ar(video, "title")}» لجهاز {ar(video.exercise, "name")} متاح لك للمشاهدة في أي وقت.'), icon='smart_display',
            action_label='Watch now', action_path=f'/dashboard/machine-guide?exercise={video.exercise_id}')
     if video.coach_id:
-        notify_coach(video.coach, 'workout', 'Someone bought your video',
-                     f'{intent.member.full_name or "A member"} unlocked “{video.title}” (SAR {intent.amount}).',
+        buyer = intent.member.full_name
+        notify_coach(video.coach, 'workout', bi('Someone bought your video', 'اشترى أحدهم فيديو لك'),
+                     bi(f'{buyer or "A member"} unlocked “{video.title}” (SAR {intent.amount}).',
+                        f'فتح {buyer or "أحد الأعضاء"} «{ar(video, "title")}» ({intent.amount} ريال).'),
                      icon='smart_display', action_label='My videos', action_path='/coach/videos')
     return True, ''
 
@@ -545,15 +561,21 @@ def _fulfil_class_pass(intent):
         if not made:
             e.status = 'enrolled'
             e.save(update_fields=['status'])
-        when = f'every {c.start_time:%H:%M} on its day until {until:%d %b %Y}'
+        when = bi(f'every {c.start_time:%H:%M} on its day until {until:%d %b %Y}',
+                  f'كل {DAYS_AR[c.day_of_week]} الساعة {c.start_time:%H:%M} حتى {ar_date(until)}')
     else:
-        when = f'on {intent.session_date:%A %d %b} at {c.start_time:%H:%M}'
-    notify(intent.member, 'attendance', 'Class booked', f'You’re in {c.name} {when}.', icon='event_available',
+        when = bi(f'on {intent.session_date:%A %d %b} at {c.start_time:%H:%M}',
+                  f'يوم {ar_day(intent.session_date)} الساعة {c.start_time:%H:%M}')
+    notify(intent.member, 'attendance', bi('Class booked', 'تم حجز الحصة'),
+           bi(f'You’re in {c.name} {when.en}.', f'أنت مسجل في {ar(c, "name")} {when.ar}.'), icon='event_available',
            action_label='My classes', action_path='/dashboard/classes')
     if c.trainer_id:
-        notify_coach(c.trainer, 'attendance', 'New class booking',
-                     f'{intent.member.full_name or "A member"} paid for {c.name} '
-                     + ('(whole class).' if intent.pass_kind == 'full' else f'on {intent.session_date:%a %d %b}.'),
+        buyer = intent.member.full_name
+        notify_coach(c.trainer, 'attendance', bi('New class booking', 'حجز جديد في حصة'),
+                     bi(f'{buyer or "A member"} paid for {c.name} '
+                        + ('(whole class).' if intent.pass_kind == 'full' else f'on {intent.session_date:%a %d %b}.'),
+                        f'دفع {buyer or "أحد الأعضاء"} مقابل {ar(c, "name")} '
+                        + ('(الحصة كاملة).' if intent.pass_kind == 'full' else f'يوم {ar_day(intent.session_date)}.')),
                      icon='groups', action_label='My classes', action_path='/coach/classes')
     return True, ''
 
@@ -574,8 +596,9 @@ def _fulfil_renewal(intent):
     m.status = 'active'
     m.lifetime_value = (m.lifetime_value or 0) + intent.amount
     m.save()
-    notify(intent.member, 'payment', 'Membership renewed',
-           f'{intent.plan.display_name} is active until {m.expiry_date:%d %b %Y}.', icon='card_membership',
+    notify(intent.member, 'payment', bi('Membership renewed', 'تم تجديد العضوية'),
+           bi(f'{intent.plan.display_name} is active until {m.expiry_date:%d %b %Y}.',
+              f'{ar(intent.plan, "display_name")} فعّالة حتى {ar_date(m.expiry_date)}.'), icon='card_membership',
            action_label='View membership', action_path='/dashboard/payments')
     return True, ''
 
@@ -591,8 +614,9 @@ def _fulfil_facility(intent):
         return False, 'you already had access to this facility'
     grant(intent.member, intent.facility_item_id, addon.name, addon.monthly_price, intent.months,
           intent.amount, date.today(), m.expiry_date, 'addon')
-    notify(intent.member, 'payment', 'Facility added',
-           f'{addon.name} is included in your membership until {m.expiry_date:%d %b %Y}.', icon='pool',
+    notify(intent.member, 'payment', bi('Facility added', 'تمت إضافة المرفق'),
+           bi(f'{addon.name} is included in your membership until {m.expiry_date:%d %b %Y}.',
+              f'{addon.name} مشمول في عضويتك حتى {ar_date(m.expiry_date)}.'), icon='pool',
            action_label='My facilities', action_path='/dashboard/payments')
     return True, ''
 
@@ -629,8 +653,11 @@ def refund_intent(intent, reason='', staff=None):
         intent.failure_reason = (f'Refunded by {getattr(staff, "email", "staff")}: {reason}' if reason
                                  else f'Refunded by {getattr(staff, "email", "staff")}')[:255]
         intent.save(update_fields=['status', 'failure_reason'])
-    notify(intent.member, 'payment', 'Refund issued',
-           f'SAR {intent.amount} for "{intent.description}" was refunded'
-           + (' to your locker credit.' if intent.method == 'locker_credit' else ' to your card (3–10 days to appear).'),
+    to_credit = intent.method == 'locker_credit'
+    notify(intent.member, 'payment', bi('Refund issued', 'تم استرداد المبلغ'),
+           bi(f'SAR {intent.amount} for "{intent.description}" was refunded'
+              + (' to your locker credit.' if to_credit else ' to your card (3–10 days to appear).'),
+              f'أُعيد {intent.amount} ريال مقابل «{intent.description}» '
+              + ('إلى رصيد خزانتك.' if to_credit else 'إلى بطاقتك (يظهر خلال 3–10 أيام).')),
            icon='undo', action_label='View payments', action_path='/dashboard/payments')
     return intent

@@ -21,6 +21,7 @@ from rest_framework.pagination import PageNumberPagination
 from rest_framework.response import Response
 
 from apps.accounts.models import User
+from apps.core.i18n import ar_date, bi
 from apps.members.models import CheckIn, Membership, MembershipFacility
 from apps.members.serializers import MembershipSerializer
 from apps.notifications.service import notify
@@ -215,7 +216,9 @@ def _extend(u, m, data, staff):
                            'subscription', amount, DESK_METHODS[method], f'desk:{staff.id}:{timezone.now():%Y%m%d%H%M%S}',
                            buyer=company)
     logger.info('Membership of %s extended %s mo by %s (%s, SAR %s) %s', u.email, months, staff.email, method, amount, note)
-    notify(u, 'payment', 'Membership extended', f'Your membership now runs until {m.expiry_date:%d %b %Y}.',
+    notify(u, 'payment', bi('Membership extended', 'تم تمديد العضوية'),
+           bi(f'Your membership now runs until {m.expiry_date:%d %b %Y}.',
+              f'تستمر عضويتك الآن حتى {ar_date(m.expiry_date)}.'),
            icon='card_membership', action_label='View membership', action_path='/dashboard/payments')
     return None
 
@@ -235,8 +238,9 @@ def _freeze(u, m, data, staff):
     m.expiry_date = max(m.expiry_date, today) + timedelta(days=days)   # paid time isn't lost
     m.status = 'frozen'
     m.save()
-    notify(u, 'system', 'Membership frozen',
-           f'Your membership is paused until {m.frozen_until:%d %b %Y}; your expiry moved to {m.expiry_date:%d %b %Y}.',
+    notify(u, 'system', bi('Membership frozen', 'تم تجميد العضوية'),
+           bi(f'Your membership is paused until {m.frozen_until:%d %b %Y}; your expiry moved to {m.expiry_date:%d %b %Y}.',
+              f'عضويتك متوقفة حتى {ar_date(m.frozen_until)}، وانتقل تاريخ انتهائها إلى {ar_date(m.expiry_date)}.'),
            icon='ac_unit', action_label='View membership', action_path='/dashboard/payments')
     return None
 
@@ -251,7 +255,9 @@ def _unfreeze(u, m, data, staff):
     m.frozen_until = None
     m.status = 'active'
     m.save()
-    notify(u, 'system', 'Membership unfrozen', f'Welcome back! Your membership runs until {m.expiry_date:%d %b %Y}.',
+    notify(u, 'system', bi('Membership unfrozen', 'تم إلغاء تجميد العضوية'),
+           bi(f'Welcome back! Your membership runs until {m.expiry_date:%d %b %Y}.',
+              f'أهلًا بعودتك! تستمر عضويتك حتى {ar_date(m.expiry_date)}.'),
            icon='sunny', action_label='View membership', action_path='/dashboard/payments')
     return None
 
@@ -344,11 +350,14 @@ def reset_two_factor(u, staff):
     TwoFactor.objects.filter(user=u).delete()
     forget_devices(u)
     logger.warning('2FA reset for %s by %s', u.email, staff.email)
-    notify(u, 'system', '2-step verification was reset',
-           'The gym turned off 2-step verification on your account. '
-           + ('You’ll set it up again the next time you sign in.' if is_required(u)
-              else 'Turn it on again from your profile to keep your account safe.')
-           + ' If you didn’t ask for this, contact the front desk.', icon='shield', priority='high',
+    notify(u, 'system', bi('2-step verification was reset', 'تمت إعادة تعيين التحقق بخطوتين'),
+           bi('The gym turned off 2-step verification on your account. ', 'أوقف النادي التحقق بخطوتين في حسابك. ')
+           + (bi('You’ll set it up again the next time you sign in.', 'ستعيد إعداده عند تسجيل دخولك القادم.')
+              if is_required(u)
+              else bi('Turn it on again from your profile to keep your account safe.',
+                      'فعّله مجددًا من ملفك الشخصي للحفاظ على أمان حسابك.'))
+           + bi(' If you didn’t ask for this, contact the front desk.', ' إن لم تطلب ذلك فتواصل مع مكتب الاستقبال.'),
+           icon='shield', priority='high',
            action_label='Security settings', action_path='/dashboard/profile?tab=security')
     return None
 

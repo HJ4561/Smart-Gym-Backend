@@ -442,9 +442,11 @@ KCAL_PER_MINUTE = 6
 
 
 def _notify_pr(member, exercise, workout_set):
+    from apps.core.i18n import ar, bi
     from apps.notifications.service import notify
-    notify(member, 'achievement', 'New personal record!',
-           f'{exercise.name}: {workout_set.weight_kg:g} kg × {workout_set.reps}.', icon='emoji_events',
+    notify(member, 'achievement', bi('New personal record!', 'رقم شخصي جديد!'),
+           bi(f'{exercise.name}: {workout_set.weight_kg:g} kg × {workout_set.reps}.',
+              f'{ar(exercise, "name")}: {workout_set.weight_kg:g} كجم × {workout_set.reps}.'), icon='emoji_events',
            action_label='View records', action_path='/dashboard/profile')
 
 

@@ -453,8 +453,10 @@ def _update_streak_milestones(user):
         mm.progress = min(100, int((streak / milestone.target_days) * 100)) if milestone.target_days else 100
         mm.status = 'locked' if streak == 0 else 'active'
         if streak >= milestone.target_days and not was_ready:
+            from apps.core.i18n import ar, bi
             from apps.notifications.service import notify
-            notify(user, 'achievement', 'Reward unlocked',
-                   f'{milestone.title}: you reached a {milestone.target_days}-day streak. Claim your reward!',
+            notify(user, 'achievement', bi('Reward unlocked', 'تم فتح مكافأة'),
+                   bi(f'{milestone.title}: you reached a {milestone.target_days}-day streak. Claim your reward!',
+                      f'{ar(milestone, "title")}: وصلت إلى {milestone.target_days} يومًا متتاليًا. استلم مكافأتك!'),
                    icon='emoji_events', action_label='Claim', action_path='/dashboard/attendance')
         mm.save()

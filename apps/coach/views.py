@@ -301,8 +301,11 @@ def course_submit(request, course_id):
     c.submitted_at = timezone.now()
     c.review_note = ''
     c.save(update_fields=['status', 'submitted_at', 'review_note', 'updated_at'])
-    notify_staff('course', 'Course waiting for review',
-                 f'{c.trainer.user.full_name} sent “{c.title}” for review.', icon='rate_review',
+    from apps.core.i18n import ar, bi
+    coach = c.trainer.user.full_name
+    notify_staff('course', bi('Course waiting for review', 'دورة بانتظار المراجعة'),
+                 bi(f'{coach} sent “{c.title}” for review.', f'أرسل {coach} «{ar(c, "title")}» للمراجعة.'),
+                 icon='rate_review',
                  action_label='Review course', action_path='/admin/trainers?tab=courses&status=pending')
     return Response(_coach_course_row(c, modules=True))
 
