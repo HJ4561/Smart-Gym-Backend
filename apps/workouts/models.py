@@ -92,7 +92,9 @@ class ExerciseVideo(models.Model):
                               related_name='machine_videos')
     tier = models.CharField(max_length=10, choices=TIER_CHOICES, default='basic')
     title = models.CharField(max_length=120)
+    title_ar = models.CharField(max_length=120, blank=True, db_default='')   # Arabic; empty = show the English
     description = models.TextField(blank=True)
+    description_ar = models.TextField(blank=True, db_default='')   # Arabic; empty = show the English
     video_url = models.URLField()
     duration_minutes = models.PositiveIntegerField(default=5)
     price = models.DecimalField(max_digits=8, decimal_places=2, default=0)   # 0 for basic videos

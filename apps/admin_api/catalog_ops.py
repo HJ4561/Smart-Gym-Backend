@@ -359,7 +359,7 @@ def _course_row(c, modules=False):
     if modules:
         row['modules'] = [{
             'id': m.id, 'order': m.order, 'title': m.title, 'description': m.description,
-            'week_number': m.week_number, 'day_number': m.day_number, 'video_url': m.video_url,
+            **with_ar(m, 'title', 'description'), 'week_number': m.week_number, 'day_number': m.day_number, 'video_url': m.video_url,
             'pdf_url': m.pdf_url, 'duration_minutes': m.duration_minutes,
         } for m in c.modules.order_by('order')]
         row['module_count'] = len(row['modules'])
@@ -440,6 +440,7 @@ def _replace_modules(c, modules, errors):
         m.order = n + 1
         m.title = _text(raw, 'title', e, 200, required=True)
         m.description = _text(raw, 'description', e, 4000)
+        read_ar(m, raw, {'title': 200, 'description': 4000}, e)
         for field, lo, hi in (('week_number', 1, 104), ('day_number', 1, 7), ('duration_minutes', 1, 600)):
             v = _int(raw.get(field, 1), field, e, lo, hi)
             if v is not None:

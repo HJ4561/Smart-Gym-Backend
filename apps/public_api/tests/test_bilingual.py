@@ -99,3 +99,46 @@ class BilingualDataTests(APITestCase):
         self.assertIn('title_ar', r.data)
         r = self.client.patch(f'/api/coach/courses/{course.id}/', {'description_ar': 'وصف'}, format='json')
         self.assertEqual(r.status_code, 200)
+
+
+class BilingualLessonsAndVideosTests(APITestCase):
+    """Phase 2: course lessons and machine videos carry Arabic too."""
+
+    def setUp(self):
+        self.member = User.objects.create_user(username='m', email='m@t.local', password='x', role='member')
+        self.coach = User.objects.create_user(username='c', email='c@t.local', password='x', role='trainer',
+                                              first_name='Omar', last_name='Saleh')
+        self.trainer = TrainerProfile.objects.create(user=self.coach, title='Strength Coach')
+        self.machine = Exercise.objects.create(name='Leg Press', category='strength', primary_muscle='legs')
+
+    def test_lessons_saved_by_the_coach_reach_members(self):
+        course = Course.objects.create(trainer=self.trainer, title='Strength 101', description='x', category='Strength')
+        self.client.force_authenticate(self.coach)
+        r = self.client.patch(f'/api/coach/courses/{course.id}/', {'modules': [
+            {'title': 'Squat basics', 'title_ar': 'أساسيات القرفصاء', 'description': 'Stance', 'description_ar': 'وضعية القدمين',
+             'week_number': 1, 'day_number': 1, 'duration_minutes': 20}]}, format='json')
+        self.assertEqual(r.status_code, 200, r.data)
+        self.assertEqual(r.data['modules'][0]['title_ar'], 'أساسيات القرفصاء')
+        r = self.client.patch(f'/api/coach/courses/{course.id}/', {'modules': [
+            {'title': 'Squat basics', 'title_ar': 'ق' * 201, 'week_number': 1, 'day_number': 1, 'duration_minutes': 20}]},
+            format='json')
+        self.assertEqual(r.status_code, 400)
+        Course.objects.filter(pk=course.pk).update(status='published')
+        self.client.force_authenticate(self.member)
+        module = self.client.get(f'/api/catalog/courses/{course.id}/').data['modules'][0]
+        self.assertEqual((module['title_ar'], module['description_ar']), ('أساسيات القرفصاء', 'وضعية القدمين'))
+
+    def test_videos_saved_by_coach_and_admin_reach_members(self):
+        self.client.force_authenticate(self.coach)
+        r = self.client.post('/api/coach/videos/', {'exercise_id': self.machine.id, 'tier': 'basic', 'title': 'Seat setup',
+                                                    'title_ar': 'ضبط المقعد', 'video_url': 'https://youtu.be/abc',
+                                                    'duration_minutes': 3, 'description_ar': 'اضبط الارتفاع'}, format='json')
+        self.assertEqual((r.status_code, r.data['title_ar']), (201, 'ضبط المقعد'))
+        admin = User.objects.create_user(username='a', email='a@t.local', password='x', role='admin')
+        self.client.force_authenticate(admin)
+        r = self.client.patch(f"/api/admin/machine-videos/{r.data['id']}/", {'title_ar': 'ضبط مقعد الجهاز'}, format='json')
+        self.assertEqual(r.data['title_ar'], 'ضبط مقعد الجهاز')
+        self.client.force_authenticate(self.member)
+        data = self.client.get(f'/api/workouts/exercises/{self.machine.id}/videos/').data
+        rows = data['videos'] if isinstance(data, dict) else data
+        self.assertEqual((rows[0]['title_ar'], rows[0]['description_ar']), ('ضبط مقعد الجهاز', 'اضبط الارتفاع'))

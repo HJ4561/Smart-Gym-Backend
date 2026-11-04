@@ -56,7 +56,7 @@ class CourseModuleSerializer(serializers.ModelSerializer):
     class Meta:
         model = CourseModule
         fields = [
-            'id', 'order', 'title', 'description',
+            'id', 'order', 'title', 'title_ar', 'description', 'description_ar',
             'week_number', 'day_number',
             'video_url', 'pdf_url', 'duration_minutes',
             'is_locked_until_prev',

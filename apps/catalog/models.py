@@ -151,7 +151,9 @@ class CourseModule(models.Model):
     )
     order = models.IntegerField()
     title = models.CharField(max_length=200)
+    title_ar = models.CharField(max_length=200, blank=True, db_default='')   # Arabic; empty = show the English
     description = models.TextField(blank=True)
+    description_ar = models.TextField(blank=True, db_default='')   # Arabic; empty = show the English
     week_number = models.IntegerField(default=1)
     day_number = models.IntegerField(default=1)
 

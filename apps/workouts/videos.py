@@ -9,6 +9,8 @@ from decimal import Decimal, InvalidOperation
 
 from django.db.models import Count, Sum
 
+from apps.core.i18n import read_ar, with_ar
+
 from .models import ExerciseVideo, VideoPurchase
 
 RANK = ExerciseVideo.TIER_RANK
@@ -51,6 +53,7 @@ def member_row(v, can, why, included_in):
     coach = v.coach.user.full_name if v.coach_id else 'Smart Gym'
     return {
         'id': v.id, 'tier': v.tier, 'tier_label': TIERS[v.tier], 'title': v.title, 'description': v.description,
+        **with_ar(v, 'title', 'description'),
         'duration_minutes': v.duration_minutes, 'price': str(v.price), 'coach': coach,
         'locked': not can, 'access': why,
         'video_url': v.video_url if can else None,          # never sent while locked
@@ -64,6 +67,7 @@ def coach_row(v):
         'id': v.id, 'exercise_id': v.exercise_id, 'exercise': v.exercise.name, 'exercise_ar': v.exercise.name_ar,
         'machine_id': v.exercise.machine_id,
         'tier': v.tier, 'tier_label': TIERS[v.tier], 'title': v.title, 'description': v.description,
+        **with_ar(v, 'title', 'description'),
         'video_url': v.video_url, 'duration_minutes': v.duration_minutes, 'price': str(v.price),
         'is_active': v.is_active, 'coach_id': v.coach_id,
         'coach': v.coach.user.full_name if v.coach_id else 'Smart Gym',
@@ -85,6 +89,7 @@ def apply(v, data, errors):
             errors['title'] = 'Title must be 3–120 characters.'
     if 'description' in data:
         v.description = str(data.get('description') or '').strip()[:2000]
+    read_ar(v, data, {'title': 120, 'description': 2000}, errors)
     if 'video_url' in data:
         v.video_url = str(data.get('video_url') or '').strip()
         if not v.video_url.startswith('https://') or len(v.video_url) > 200:
