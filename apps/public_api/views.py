@@ -93,7 +93,9 @@ def public_facilities(request):
             {
                 'id': f.id,
                 'name': getattr(f, 'name', str(f)),
+                'name_ar': getattr(f, 'name_ar', ''),
                 'description': getattr(f, 'description', ''),
+                'description_ar': getattr(f, 'description_ar', ''),
                 'capacity': getattr(f, 'capacity', None),
                 'image_url': getattr(getattr(f, 'image', None), 'url', None),
             } for f in qs
@@ -123,8 +125,10 @@ def public_articles(request):
             {
                 'id': a.id,
                 'title': getattr(a, 'title', ''),
+                'title_ar': getattr(a, 'title_ar', ''),
                 'slug': getattr(a, 'slug', ''),
                 'excerpt': getattr(a, 'excerpt', ''),
+                'excerpt_ar': getattr(a, 'excerpt_ar', ''),
                 'cover_image_url': getattr(a, 'cover_image_url', '') or
                                    getattr(getattr(a, 'cover_image', None), 'url', ''),
                 'published_at': getattr(a, 'published_at', None) or getattr(a, 'created_at', None),

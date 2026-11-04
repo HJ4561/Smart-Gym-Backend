@@ -12,10 +12,12 @@ class Facility(models.Model):
     ]
 
     name = models.CharField(max_length=120)
+    name_ar = models.CharField(max_length=120, blank=True, db_default='')   # Arabic; empty = show the English
     code = models.CharField(max_length=20, unique=True)  # FAC-01
     category = models.CharField(max_length=20, choices=CATEGORY_CHOICES, default='gym')
     zone = models.CharField(max_length=60, blank=True)  # Sector 01
     description = models.TextField(blank=True)
+    description_ar = models.TextField(blank=True, db_default='')   # Arabic; empty = show the English
 
     capacity = models.IntegerField(default=10)
     current_occupancy = models.IntegerField(default=0)

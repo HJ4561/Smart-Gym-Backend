@@ -46,6 +46,17 @@ def read_ar(obj, data, limits, errors):
         setattr(obj, key, value)
 
 
+def read_ar_list(obj, data, field, *, items, chars, separator='\n'):
+    """`<field>_ar` as a list (key facts, specialties): a JSON list or text split on `separator`."""
+    key = f'{field}_ar'
+    if key not in data:
+        return
+    raw = data.get(key) or []
+    if isinstance(raw, str):
+        raw = (raw.replace('،', ',') if separator == ',' else raw).split(separator)   # the Arabic comma too
+    setattr(obj, key, [str(x).strip()[:chars] for x in raw if str(x).strip()][:items])
+
+
 def ar(obj, field):
     """The Arabic of a bilingual field, or its English when there is none (for Arabic messages)."""
     return getattr(obj, f'{field}_ar', '') or getattr(obj, field, '') or ''

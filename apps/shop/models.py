@@ -12,6 +12,7 @@ class ProductCategory(models.Model):
     name_ar = models.CharField(max_length=60, blank=True, db_default='')   # Arabic; empty = show the English
     icon = models.CharField(max_length=40, blank=True)
     description = models.CharField(max_length=200, blank=True)
+    description_ar = models.CharField(max_length=200, blank=True, db_default='')   # Arabic; empty = show the English
     display_order = models.IntegerField(default=0)
     is_active = models.BooleanField(default=True)
 
@@ -44,16 +45,21 @@ class Product(models.Model):
     price = models.DecimalField(max_digits=10, decimal_places=2)
     original_price = models.DecimalField(max_digits=10, decimal_places=2, null=True, blank=True)
     price_note = models.CharField(max_length=100, blank=True)  # "Pro Athletic Tier Price"
+    price_note_ar = models.CharField(max_length=100, blank=True, db_default='')   # Arabic; empty = show the English
 
     # Badges
     badge_top = models.CharField(max_length=60, blank=True)     # "Pro Perk 15% Off"
+    badge_top_ar = models.CharField(max_length=60, blank=True, db_default='')   # Arabic; empty = show the English
     badge_top_accent = models.BooleanField(default=False)
     badge_secondary = models.CharField(max_length=60, blank=True)  # "Cold-Filtered"
+    badge_secondary_ar = models.CharField(max_length=60, blank=True, db_default='')   # Arabic; empty = show the English
     telemetry = models.JSONField(default=list, blank=True)  # ["28G PROTEIN / SRV", "6.8G BCAA"]
+    telemetry_ar = models.JSONField(default=list, blank=True, null=True)   # Arabic; empty = show the English
 
     # Stock
     stock_quantity = models.IntegerField(default=0)
     stock_label = models.CharField(max_length=60, blank=True)  # "In Stock (14 Tubs)"
+    stock_label_ar = models.CharField(max_length=60, blank=True, db_default='')   # Arabic; empty = show the English
     low_stock_threshold = models.IntegerField(default=5)
 
     # Metrics

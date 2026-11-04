@@ -55,7 +55,8 @@ def _f(v):
 # ============================================================
 # PROFILE + DASHBOARD
 # ============================================================
-COACH_EDITABLE = ('first_name', 'last_name', 'phone', 'title', 'title_ar', 'credentials', 'bio', 'bio_ar', 'specialties',
+COACH_EDITABLE = ('first_name', 'last_name', 'phone', 'title', 'title_ar', 'credentials', 'credentials_ar', 'bio', 'bio_ar',
+                  'specialties', 'specialties_ar',
                   'years_experience', 'is_accepting_clients', 'offers_1on1')
 
 

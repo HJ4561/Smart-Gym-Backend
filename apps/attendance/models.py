@@ -11,13 +11,17 @@ class Milestone(models.Model):
     ]
 
     tier = models.CharField(max_length=60)         # "Tier 01 • Unlocked"
+    tier_ar = models.CharField(max_length=60, blank=True, db_default='')   # Arabic; empty = show the English
     title = models.CharField(max_length=120)       # "15-Day Consistency"
+    title_ar = models.CharField(max_length=120, blank=True, db_default='')   # Arabic; empty = show the English
     description = models.TextField(blank=True)
+    description_ar = models.TextField(blank=True, db_default='')   # Arabic; empty = show the English
     icon = models.CharField(max_length=40, default='emoji_events')
 
     tier_type = models.CharField(max_length=20, choices=TIER_TYPES, default='consistency')
     target_days = models.IntegerField(default=15)
     reward_value = models.CharField(max_length=200, blank=True)  # "$65 value cryo session"
+    reward_value_ar = models.CharField(max_length=200, blank=True, db_default='')   # Arabic; empty = show the English
     reward_code = models.CharField(max_length=80, blank=True)    # "CONSISTENT-15"
 
     display_order = models.IntegerField(default=0)

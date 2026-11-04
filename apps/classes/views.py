@@ -65,7 +65,7 @@ def _row(c, mine=None):
     row = {
         'id': c.id, 'name': c.name, 'category': c.category, 'category_label': CATEGORIES.get(c.category, c.category),
         'level': c.level, 'level_label': LEVELS.get(c.level, c.level), 'description': c.description,
-        **with_ar(c, 'name', 'description'),
+        **with_ar(c, 'name', 'description', 'location'),
         'trainer_id': c.trainer_id, 'trainer': trainer,
         'day_of_week': c.day_of_week, 'day': DAYS[c.day_of_week] if 0 <= c.day_of_week < 7 else '',
         'start_time': c.start_time.strftime('%H:%M'),
@@ -308,7 +308,7 @@ def _apply(c, data, errors):
         c.level = data.get('level')
     if 'description' in data:
         c.description = str(data.get('description') or '')[:2000]
-    read_ar(c, data, {'name': 120, 'description': 2000}, errors)
+    read_ar(c, data, {'name': 120, 'description': 2000, 'location': 100}, errors)
     if 'location' in data:
         c.location = ' '.join(str(data.get('location') or '').split())
         if c.location and not ROOM_RE.fullmatch(c.location):

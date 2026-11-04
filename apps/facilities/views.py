@@ -37,6 +37,8 @@ def facilities_list(request):
             'id': f.id,
             'code': f.code,
             'name': f.name,
+            'name_ar': f.name_ar,
+            'description_ar': f.description_ar,
             'category': f.category,
             'zone': f.zone,
             'capacity': f.capacity,

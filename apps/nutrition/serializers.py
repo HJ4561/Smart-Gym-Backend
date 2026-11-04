@@ -44,8 +44,8 @@ class NutritionistProfileSerializer(serializers.ModelSerializer):
     class Meta:
         model = NutritionistProfile
         fields = [
-            'id', 'user', 'title', 'title_ar', 'credentials', 'bio', 'bio_ar', 'photo_url',
-            'is_verified', 'is_accepting_clients', 'specialties',
+            'id', 'user', 'title', 'title_ar', 'credentials', 'credentials_ar', 'bio', 'bio_ar', 'photo_url',
+            'is_verified', 'is_accepting_clients', 'specialties', 'specialties_ar',
             'rating', 'total_reviews', 'total_clients',
             'years_experience', 'hourly_rate', 'is_featured',
         ]

@@ -247,7 +247,9 @@ class PersonalRecord(models.Model):
 class WorkoutTemplate(models.Model):
     """Pre-built workout templates (courses, programs)."""
     name = models.CharField(max_length=120)
+    name_ar = models.CharField(max_length=120, blank=True, db_default='')   # Arabic; empty = show the English
     description = models.TextField(blank=True)
+    description_ar = models.TextField(blank=True, db_default='')   # Arabic; empty = show the English
     category = models.CharField(max_length=50, blank=True)  # Hypertrophy, Power, etc.
     difficulty = models.CharField(max_length=20, default='intermediate')  # beginner/intermediate/advanced
 

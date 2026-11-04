@@ -15,6 +15,7 @@ class TrainerProfile(models.Model):
     title = models.CharField(max_length=120)  # "Head Elite Specialist"
     title_ar = models.CharField(max_length=120, blank=True, db_default='')   # Arabic; empty = show the English
     credentials = models.CharField(max_length=200, blank=True)  # "CSCS*D, USAW"
+    credentials_ar = models.CharField(max_length=200, blank=True, db_default='')   # Arabic; empty = show the English
     bio = models.TextField(blank=True)
     bio_ar = models.TextField(blank=True, db_default='')   # Arabic; empty = show the English
     photo_url = models.URLField(blank=True)
@@ -25,6 +26,7 @@ class TrainerProfile(models.Model):
 
     # Specialties (list of strings)
     specialties = models.JSONField(default=list, blank=True)
+    specialties_ar = models.JSONField(default=list, blank=True, null=True)   # Arabic; empty = show the English
 
     # Metrics
     rating = models.DecimalField(max_digits=3, decimal_places=2, default=0)

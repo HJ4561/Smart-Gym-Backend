@@ -14,7 +14,7 @@ from rest_framework.decorators import api_view, parser_classes, permission_class
 from rest_framework.parsers import FormParser, JSONParser, MultiPartParser
 from rest_framework.response import Response
 
-from apps.core.i18n import read_ar, with_ar
+from apps.core.i18n import read_ar, read_ar_list, with_ar
 from apps.core.validators import duplicate_error
 from apps.shop.models import Order, OrderItem, Product, ProductCategory, PromoCode
 
@@ -63,6 +63,7 @@ def _product_row(p):
         'image_url': p.image_url, 'price': _f(p.price), 'original_price': _f(p.original_price),
         'price_note': p.price_note, 'badge_top': p.badge_top, 'badge_secondary': p.badge_secondary,
         'telemetry': p.telemetry or [], 'stock_quantity': p.stock_quantity, 'stock_label': p.stock_label,
+        **with_ar(p, 'price_note', 'badge_top', 'badge_secondary', 'stock_label'), 'telemetry_ar': p.telemetry_ar or [],
         'low_stock_threshold': p.low_stock_threshold, 'is_low_stock': p.is_low_stock,
         'is_active': p.is_active, 'is_featured': p.is_featured, 'total_sold': p.total_sold,
         'rating': _f(p.rating), 'total_reviews': p.total_reviews, 'updated_at': p.updated_at,
@@ -125,7 +126,9 @@ def _apply_product(p, data, errors):
             elif f == 'name' and len(v) < 3:
                 errors[f] = 'Product name must be at least 3 characters.'
             setattr(p, f, v)
-    read_ar(p, data, {'name': 200, 'description': 4000}, errors)
+    read_ar(p, data, {'name': 200, 'description': 4000, 'price_note': 100, 'badge_top': 60, 'badge_secondary': 60,
+                      'stock_label': 60}, errors)
+    read_ar_list(p, data, 'telemetry', items=6, chars=60)
     if 'name' in data and 'name' not in errors:
         dup = duplicate_error(Product.objects.all(), 'name', p.name, 'A product named', exclude_id=p.id)
         if dup:
@@ -261,6 +264,7 @@ def shop_stats(request):
 # ============================================================
 def _cat_row(c):
     return {'id': c.id, 'key': c.key, 'name': c.name, 'name_ar': c.name_ar, 'icon': c.icon, 'description': c.description,
+            'description_ar': c.description_ar,
             'display_order': c.display_order, 'is_active': c.is_active, 'products': c.products.count()}
 
 
@@ -286,6 +290,7 @@ def categories(request):
         key=key, name=name, name_ar=' '.join(str(request.data.get('name_ar') or '').split())[:60],
         icon=str(request.data.get('icon') or 'category')[:40],
         description=str(request.data.get('description') or '')[:200],
+        description_ar=str(request.data.get('description_ar') or '')[:200],
         display_order=ProductCategory.objects.count())
     return Response(_cat_row(c), status=201)
 
@@ -300,7 +305,7 @@ def category_detail(request, category_id):
         except ProtectedError:
             return Response({'detail': 'Move or delete its products first, or hide the category.'}, status=400)
         return Response(status=204)
-    for f, n in (('name', 60), ('name_ar', 60), ('icon', 40), ('description', 200)):
+    for f, n in (('name', 60), ('name_ar', 60), ('icon', 40), ('description', 200), ('description_ar', 200)):
         if f in request.data:
             setattr(c, f, ' '.join(str(request.data.get(f) or '').split())[:n])
     if not c.name:

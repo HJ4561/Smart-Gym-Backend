@@ -42,6 +42,7 @@ class GymClass(models.Model):
 
     capacity = models.IntegerField(default=10)
     location = models.CharField(max_length=100, blank=True)
+    location_ar = models.CharField(max_length=100, blank=True, db_default='')   # Arabic; empty = show the English
 
     # Paid classes (0 = free). A class can run for a set period (starts_on → ends_on): members buy
     # the whole run, or pay for single sessions.

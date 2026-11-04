@@ -20,7 +20,7 @@ from rest_framework.response import Response
 
 from apps.accounts.models import User
 from apps.catalog.models import Course, CourseModule, Enrollment, TrainerProfile, TrainerSession
-from apps.core.i18n import ar, bi, read_ar, with_ar
+from apps.core.i18n import ar, bi, read_ar, read_ar_list, with_ar
 from apps.core.validators import duplicate_error, email_error
 from apps.site_content.serializers import SiteImageUploadSerializer
 
@@ -95,7 +95,7 @@ def _trainer_row(t, counts=None):
         'first_name': u.first_name, 'last_name': u.last_name,
         'initials': ''.join(p[0] for p in name.split()[:2]).upper() or '?',
         'title': t.title, 'credentials': t.credentials, 'bio': t.bio, 'photo_url': t.photo_url,
-        **with_ar(t, 'title', 'bio'),
+        **with_ar(t, 'title', 'bio', 'credentials'), 'specialties_ar': t.specialties_ar or [],
         'specialties': t.specialties or [], 'years_experience': t.years_experience,
         'rating': _f(t.rating), 'total_reviews': t.total_reviews, 'total_students': t.total_students,
         'hourly_rate': _f(t.hourly_rate), 'is_verified': t.is_verified,
@@ -147,7 +147,8 @@ def _apply_trainer(t, u, data, errors):
         t.credentials = _text(data, 'credentials', errors, 200)
     if 'bio' in data:
         t.bio = _text(data, 'bio', errors, 4000)
-    read_ar(t, data, {'title': 120, 'bio': 4000}, errors)      # trainers and nutritionists alike
+    read_ar(t, data, {'title': 120, 'bio': 4000, 'credentials': 200}, errors)      # trainers and nutritionists alike
+    read_ar_list(t, data, 'specialties', items=12, chars=40, separator=',')
     if 'specialties' in data:
         raw = data.get('specialties') or []
         if isinstance(raw, str):

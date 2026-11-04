@@ -25,9 +25,9 @@ class TrainerProfileSerializer(serializers.ModelSerializer):
     class Meta:
         model = TrainerProfile
         fields = [
-            'id', 'user', 'title', 'title_ar', 'credentials', 'bio', 'bio_ar', 'photo_url',
+            'id', 'user', 'title', 'title_ar', 'credentials', 'credentials_ar', 'bio', 'bio_ar', 'photo_url',
             'is_verified', 'is_accepting_clients',
-            'specialties', 'rating', 'total_reviews', 'total_students',
+            'specialties', 'specialties_ar', 'rating', 'total_reviews', 'total_students',
             'years_experience', 'hourly_rate',
             'offers_1on1', 'offers_consultation',
             'total_courses', 'availability',

@@ -13,9 +13,12 @@ class Article(models.Model):
 
     article_id = models.CharField(max_length=20, unique=True)  # ART-001
     title = models.CharField(max_length=200)
+    title_ar = models.CharField(max_length=200, blank=True, db_default='')   # Arabic; empty = show the English
     slug = models.SlugField(max_length=220, unique=True, blank=True)
     excerpt = models.CharField(max_length=300, blank=True)
+    excerpt_ar = models.CharField(max_length=300, blank=True, db_default='')   # Arabic; empty = show the English
     content = models.TextField(blank=True)
+    content_ar = models.TextField(blank=True, db_default='')   # Arabic; empty = show the English
 
     category = models.CharField(max_length=60, default='Training')
     tags = models.JSONField(default=list, blank=True)

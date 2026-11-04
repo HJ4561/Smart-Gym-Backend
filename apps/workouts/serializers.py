@@ -123,7 +123,7 @@ class WorkoutTemplateSerializer(serializers.ModelSerializer):
     class Meta:
         model = WorkoutTemplate
         fields = [
-            'id', 'name', 'description', 'category', 'difficulty',
+            'id', 'name', 'name_ar', 'description', 'description_ar', 'category', 'difficulty',
             'estimated_duration_minutes', 'is_public', 'is_active',
             'exercises', 'created_at',
         ]

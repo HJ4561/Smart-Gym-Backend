@@ -12,8 +12,8 @@ class MilestoneSerializer(serializers.ModelSerializer):
     class Meta:
         model = Milestone
         fields = [
-            'id', 'tier', 'title', 'description', 'icon',
-            'tier_type', 'target_days', 'reward_value', 'reward_code',
+            'id', 'tier', 'tier_ar', 'title', 'title_ar', 'description', 'description_ar', 'icon',
+            'tier_type', 'target_days', 'reward_value', 'reward_value_ar', 'reward_code',
             'status', 'progress', 'current_days', 'days_left',
         ]
 
