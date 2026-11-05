@@ -28,3 +28,4 @@ sqlparse==0.6.0
 tzdata==2026.5
 urllib3==2.8.0
 whitenoise==6.12.0
+segno==1.6.6

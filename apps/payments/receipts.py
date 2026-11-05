@@ -157,6 +157,28 @@ def from_registration(reg):
     }, _zatca_document(registration=reg, doc_type='invoice'))
 
 
+DOC_TYPE_AR = {'invoice': 'فاتورة', 'credit': 'إشعار دائن', 'debit': 'إشعار مدين'}
+
+
+def from_document(doc):
+    """A printable copy of one ZATCA document (e.g. a debit note), from its own link."""
+    if doc.transaction_id:
+        return _with_zatca(from_transaction(doc.transaction), doc)
+    if doc.registration_id and doc.doc_type == 'invoice':
+        return _with_zatca(from_registration(doc.registration), doc)
+    member = (doc.original.transaction.member if doc.original_id and doc.original.transaction_id else None)
+    lines = [{'en': l['name'], 'ar': '', 'qty': l['qty'], 'amount': _money(Decimal(l['net']) + Decimal(l['vat']))}
+             for l in doc.lines]
+    return _with_zatca({
+        'kind': 'z', 'pk': doc.id, 'number': doc.number, 'when': doc.issued_at,
+        'customer': doc.customer_name, 'email': getattr(member, 'email', ''),
+        'type_en': doc.get_doc_type_display(), 'type_ar': DOC_TYPE_AR.get(doc.doc_type, ''),
+        'lines': lines, 'subtotal': _money(doc.total), 'discount': _money(0), 'tax': _money(doc.vat),
+        'total': _money(doc.total), 'method': doc.payment_label or '—', 'reference': '', 'order': '',
+        'lang': getattr(member, 'language', 'en'),
+    }, doc)
+
+
 def zatca_qr(data):
     """ZATCA phase-1 TLV (base64): 1 seller, 2 VAT no., 3 ISO time, 4 total, 5 VAT. Empty without a VAT number."""
     s = seller()
@@ -184,6 +206,13 @@ STANDARD_TITLES = {
     'debit': ('DEBIT NOTE (TAX INVOICE)', 'إشعار مدين (فاتورة ضريبية)'),
 }
 RECEIPT_TITLE = ('RECEIPT', 'إيصال')
+
+
+def qr_svg(text):
+    """The QR as crisp inline SVG, drawn on the server: big enough modules and a 4-module quiet zone so phone
+    scanners (ZATCA's Fatoora app) read the long phase-2 code. Scales with CSS without blurring."""
+    import segno
+    return segno.make(text, error='l', micro=False).svg_inline(scale=4, border=4, dark='#000', light='#fff', omitsize=True)
 
 
 def _config():
@@ -324,10 +353,7 @@ def render_html(data):
               + total_row('Total incl. VAT', 'المجموع مع الضريبة', total, 'grand'))
     method = data.get('method') or ''
     paid = '<div class="dash"></div>' + total_row(method, method, total) if method and method != '—' else ''
-    qr_block = f"<div id='zqr' data-v='{e(qr)}'></div>" if qr else ''
-    qr_script = ("<script src='https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js'></script>"
-                 "<script>var z=document.getElementById('zqr');if(z&&window.QRCode)new QRCode(z,{text:z.dataset.v,"
-                 "width:150,height:150,correctLevel:QRCode.CorrectLevel.M});</script>" if qr else '')
+    qr_block = f"<div id='zqr'>{qr_svg(qr)}</div>" if qr else ''
 
     return f"""<!doctype html><html lang="en"><head><meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
@@ -359,7 +385,7 @@ td.item div[dir=rtl]{{text-align:right;color:#333}} td.c{{text-align:center}}
 .tot{{display:flex;justify-content:space-between;align-items:flex-start;gap:10px;margin:4px 0}}
 .tot .lbl{{text-align:right}} .tot .lbl small{{display:block;font-size:10px;color:#444}}
 .tot.grand .num{{font-size:17px;font-weight:700}} .tot.grand .lbl span{{font-weight:700;font-size:14px}} .tot.grand .lbl small{{font-weight:700;color:#111}}
-#zqr{{display:flex;justify-content:center;margin:12px 0 4px}}
+#zqr{{display:flex;justify-content:center;margin:12px 0 4px}} #zqr svg{{width:min(300px,82vw);height:auto;display:block;shape-rendering:crispEdges}}
 .end{{text-align:center;font-weight:700;margin-top:8px}}
 .btn{{display:block;margin:16px auto 0;padding:9px 16px;background:#e51937;color:#fff;border:0;border-radius:6px;font-weight:700;cursor:pointer;font-family:inherit}}
 @media print{{body{{background:#fff;padding:0}}.r{{box-shadow:none;max-width:none}}.btn{{display:none}}@page{{margin:8mm}}}}
@@ -385,7 +411,6 @@ td.item div[dir=rtl]{{text-align:right;color:#333}} td.c{{text-align:center}}
 <div class="end">&lt;&lt;&lt;&lt; End of invoice / <span dir="rtl">نهاية الفاتورة</span> &gt;&gt;&gt;&gt;</div>
 <button class="btn" onclick="window.print()">Print / Save PDF · <span dir="rtl">طباعة</span></button>
 </div>
-{qr_script}
 </body></html>"""
 
 
