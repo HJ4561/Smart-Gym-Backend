@@ -133,7 +133,15 @@ def approve_registration(reg: MembershipRegistration, approved_by=None):
         reg.id, user.email, membership.pass_id, expiry,
     )
 
-    # 6. Welcome email — only once the approval is committed, so a rolled-back
+    # 6. Whoever referred them gets their reward (only with a valid code; never raises into the approval).
+    if reg.referral_code:
+        from .referrals import reward_on_approval
+        try:
+            reward_on_approval(reg, user)
+        except Exception:   # noqa: BLE001
+            logger.exception('Referral reward for registration #%s failed', reg.id)
+
+    # 7. Welcome email — only once the approval is committed, so a rolled-back
     #    approval never emails login details that don't work.
     transaction.on_commit(lambda: _send_welcome_email(user, membership, temp_password))
 

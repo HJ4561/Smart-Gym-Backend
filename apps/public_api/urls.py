@@ -9,6 +9,7 @@ urlpatterns = [
     path('courses/',    views.public_courses,    name='courses'),
     path('facilities/', views.public_facilities, name='facilities'),
     path('trainers/',   views.public_trainers,   name='trainers'),
+    path('referral/',   views.public_referral,   name='referral'),
     path('articles/',   views.public_articles,   name='articles'),
     path('live/',       live.public_live,        name='live'),
 

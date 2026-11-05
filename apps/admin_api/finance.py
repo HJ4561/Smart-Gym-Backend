@@ -3,7 +3,7 @@ Admin → Finance. Every figure comes from recorded transactions:
   received  = settled card / STC Pay / desk payments and top-ups, minus refunds to cards
               (spending or refunding locker credit is not new money — see cash_transactions)
 """
-from datetime import date
+from datetime import date, datetime, time, timedelta
 
 from dateutil.relativedelta import relativedelta
 from django.db.models import Count, Q, Sum
@@ -33,19 +33,47 @@ def _f(v):
     return round(float(v or 0), 2)
 
 
+def _day(request):
+    """(start, end, 1, label) for ?date=YYYY-MM-DD; None without it; a 400 Response for a bad date."""
+    raw = (request.query_params.get('date') or '').strip()
+    if not raw:
+        return None
+    try:
+        day = date.fromisoformat(raw)
+    except ValueError:
+        return Response({'date': ['Use the date format YYYY-MM-DD.']}, status=400)
+    if day > timezone.localdate():
+        return Response({'date': ['Choose today or an earlier day.']}, status=400)
+    start = timezone.make_aware(datetime.combine(day, time.min))
+    return start, start + timedelta(days=1), 1, day.isoformat()
+
+
 @api_view(['GET'])
 @permission_classes([IsAdminUser])
 def finance_overview(request):
-    """GET /api/admin/finance/overview/?range= → received, run rate, refunds, payments to review."""
-    since, days, label = _range(request)
-    cash = cash_transactions(Transaction.objects.filter(created_at__gte=since))
+    """
+    GET /api/admin/finance/overview/?range=1d|7d|30d|90d|ytd  or  ?date=YYYY-MM-DD (that one day, gym time)
+    → received, run rate, refunds, payments to review. "This month" and the review queue ignore the filter.
+    """
+    window = _day(request)
+    if isinstance(window, Response):
+        return window
+    if window:
+        since, until, days, label = window
+    else:
+        (since, days, label), until = _range(request), None
+    period = Transaction.objects.filter(created_at__gte=since)
+    if until is not None:
+        period = period.filter(created_at__lt=until)
+    cash = cash_transactions(period)
     received = cash.aggregate(t=Sum('amount'))['t'] or 0
     month_start = timezone.localtime().replace(day=1, hour=0, minute=0, second=0, microsecond=0)
     this_month = cash_transactions(Transaction.objects.filter(created_at__gte=month_start)).aggregate(t=Sum('amount'))['t'] or 0
-    refunds = Transaction.objects.filter(transaction_type='refund', created_at__gte=since).aggregate(t=Sum('amount'))['t'] or 0
+    refunds = period.filter(transaction_type='refund').aggregate(t=Sum('amount'))['t'] or 0
     review = PaymentIntent.objects.filter(status='review')
     return Response({
         'range_label': label,
+        'from': since.isoformat(), 'to': (until or timezone.now()).isoformat(),
         'received': _f(received),
         'this_month': _f(this_month),
         'run_rate': _f(float(received) / days * 365),

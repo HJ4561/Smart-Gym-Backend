@@ -280,6 +280,7 @@ class MembershipRegistration(models.Model):
     payment_amount    = models.DecimalField(max_digits=10, decimal_places=2, default=0)
     # Facility add-ons chosen at signup: [{id, name, monthly_price, months, amount}] (prices frozen here).
     facilities        = models.JSONField(default=list, blank=True, null=True)
+    referral_code     = models.CharField(max_length=12, blank=True, db_default='')   # who sent them (checked at signup)
     payment_status    = models.CharField(max_length=20, choices=PAYMENT_STATUS, default='pending')
     payment_paid_at   = models.DateTimeField(null=True, blank=True)
     # null (not '') so the unique constraint ignores registrations without a payment yet
@@ -396,6 +397,23 @@ class MembershipFacility(models.Model):
     @property
     def is_active(self):
         return self.expires_on > date.today()
+
+
+class Referral(models.Model):
+    """A signup made with a member's referral link, approved by the gym: the referrer got `reward` in credit."""
+    referrer = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.CASCADE, related_name='referrals_made')
+    referred = models.OneToOneField(settings.AUTH_USER_MODEL, on_delete=models.CASCADE, related_name='referred_by')
+    registration = models.OneToOneField(MembershipRegistration, on_delete=models.SET_NULL, null=True, blank=True,
+                                        related_name='referral')
+    reward = models.DecimalField(max_digits=8, decimal_places=2)
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        db_table = 'referrals'
+        ordering = ['-created_at']
+
+    def __str__(self):
+        return f'{self.referrer} → {self.referred} (SAR {self.reward})'
 
 
 class LivenessCheck(models.Model):

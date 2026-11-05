@@ -280,7 +280,7 @@ class ReviewTests(Base):
     def test_only_trained_members_review_and_rating_updates(self):
         self.client.force_authenticate(self.member)
         url = f'/api/catalog/trainers/{self.coach.id}/review/'
-        self.assertEqual(self.client.post(url, {'rating': 5}, format='json').status_code, 403)
+        self.assertEqual(self.client.post(url, {'rating': 5}, format='json').status_code, 400)
         TrainerSession.objects.create(member=self.member, trainer=self.coach, status='completed',
                                       scheduled_at=timezone.now() - timedelta(days=1))
         self.assertIn('1 to 5', self.client.post(url, {'rating': 9}, format='json').data['rating'])

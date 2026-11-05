@@ -120,3 +120,16 @@ def check_out(request, check_in_id):
     entry.save()
 
     return Response(CheckInSerializer(entry).data)
+
+
+@api_view(['GET'])
+@permission_classes([IsAuthenticated])
+def my_referral(request):
+    """
+    GET /api/members/referral/ → {code, link, reward, joined, earned}: the member's referral link
+    and how many people joined with it. Members only.
+    """
+    if request.user.role != 'member':
+        return Response({'detail': 'Referral links are for members.'}, status=status.HTTP_403_FORBIDDEN)
+    from .referrals import summary
+    return Response(summary(request.user))

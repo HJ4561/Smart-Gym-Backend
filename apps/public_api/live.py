@@ -44,10 +44,12 @@ def build_live():
     reviews = []
     for r in TrainerReview.objects.select_related('member', 'trainer__user').exclude(comment='').filter(rating__gte=4)[:6]:
         reviews.append({'name': _short_name(r.member), 'rating': r.rating, 'comment': r.comment,
-                        'about': r.trainer.user.full_name, 'kind': 'trainer', 'created_at': r.created_at})
+                        'about': r.trainer.user.full_name, 'about_ar': r.trainer.user.full_name, 'kind': 'trainer',
+                        'created_at': r.created_at})
     for r in CourseReview.objects.select_related('member', 'course').exclude(comment='').filter(rating__gte=4)[:6]:
         reviews.append({'name': _short_name(r.member), 'rating': r.rating, 'comment': r.comment,
-                        'about': r.course.title, 'kind': 'course', 'created_at': r.created_at})
+                        'about': r.course.title, 'about_ar': r.course.title_ar or r.course.title, 'kind': 'course',
+                        'created_at': r.created_at})
     reviews.sort(key=lambda r: r['created_at'], reverse=True)
 
     ratings = [x for x in (TrainerReview.objects.aggregate(a=Avg('rating'), n=Count('id')),

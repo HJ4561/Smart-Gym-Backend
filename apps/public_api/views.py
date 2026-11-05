@@ -67,6 +67,32 @@ def public_courses(request):
     return Response(CourseListSerializer(qs, many=True).data)
 
 
+REFERRAL_LOOKUPS_PER_IP_HOUR = 60
+
+
+@api_view(['GET'])
+@permission_classes([AllowAny])
+def public_referral(request):
+    """
+    GET /api/public/referral/?code=ABCD2345 → is this referral code valid, and whose is it (first name only)?
+    The signup page calls it when it opens with ?ref=… so it can say "Invited by Sara". 404 when not valid.
+    """
+    from datetime import timedelta
+    from apps.accounts import ratelimit
+    from apps.members import referrals
+    ip = ratelimit.client_ip(request)
+    if ratelimit.count('referral_ip', ip, timedelta(hours=1)) >= REFERRAL_LOOKUPS_PER_IP_HOUR:
+        return Response({'detail': 'Too many tries. Please try again in an hour.'},
+                        status=status.HTTP_429_TOO_MANY_REQUESTS)
+    ratelimit.hit('referral_ip', ip)
+    code = referrals.normalize(request.query_params.get('code'))
+    referrer = referrals.referrer_for(code)
+    if referrer is None:
+        return Response({'detail': 'This referral code isn’t valid. Check it, or leave it empty.', 'valid': False},
+                        status=status.HTTP_404_NOT_FOUND)
+    return Response({'valid': True, 'code': code, 'referrer_first_name': referrer.first_name or ''})
+
+
 @api_view(['GET'])
 @permission_classes([AllowAny])
 def public_trainers(request):
@@ -251,7 +277,12 @@ def public_register(request):
     # The site's language: an explicit "language" field, else the request's Accept-Language.
     from apps.core.i18n import language
     wanted = str(request.data.get('language') or '').lower()
-    reg = serializer.save(language=wanted if wanted in ('ar', 'en') else language())
+    from apps.members import referrals
+    code = referrals.normalize(request.data.get('referral_code'))
+    if code and referrals.referrer_for(code) is None:
+        return Response({'referral_code': ['This referral code isn’t valid. Check it, or leave it empty.']},
+                        status=status.HTTP_400_BAD_REQUEST)
+    reg = serializer.save(language=wanted if wanted in ('ar', 'en') else language(), referral_code=code)
     ratelimit.hit('signup_ip', ip)
     return Response(
         {**RegistrationStatusSerializer(reg).data, 'amount': str(reg.payment_amount),

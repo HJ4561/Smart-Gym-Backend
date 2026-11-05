@@ -430,6 +430,12 @@ MESSAGES = {
     '{0} signs in to the admin console.': 'يسجل {0} الدخول إلى لوحة الإدارة.',
     '{0} videos need a price from SAR 1 to SAR {1}.': 'تحتاج فيديوهات {0} إلى سعر من 1 إلى {1} ريال.',
     '{0} “{1}” already exists. Choose a different one.': '{0} «{1}» موجود مسبقًا. اختر غيره.',
+    'This referral code isn’t valid. Check it, or leave it empty.': 'رمز الإحالة غير صالح. تحقق منه أو اتركه فارغًا.',
+    'Referral links are for members.': 'روابط الإحالة متاحة للأعضاء فقط.',
+    'Too many tries. Please try again in an hour.': 'محاولات كثيرة. حاول مرة أخرى بعد ساعة.',
+    'You can review this course after you join it.': 'يمكنك تقييم هذه الدورة بعد الانضمام إليها.',
+    'Use the date format YYYY-MM-DD.': 'استخدم صيغة التاريخ YYYY-MM-DD.',
+    'Choose today or an earlier day.': 'اختر اليوم أو يومًا سابقًا.',
     'Choose a PNG, JPG or WebP image.': 'اختر صورة بصيغة PNG أو JPG أو WebP.',
     'The logo must be 1 MB or smaller.': 'يجب ألا يزيد حجم الشعار عن 1 ميغابايت.',
 }
@@ -444,4 +450,5 @@ INTERNAL = {
     'Line amounts must not be negative.',
     'Credit and debit notes need the original invoice number and a reason.',
     'QR tag {0} is too long ({1} bytes).',
+    'Could not make a unique referral code.',
 }

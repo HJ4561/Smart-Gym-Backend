@@ -67,11 +67,16 @@ def trainer_detail(request, trainer_id):
     return Response(data)
 
 
+REVIEWABLE_ENROLLMENTS = ('active', 'completed', 'paused')     # paid for and not refunded
+
+
 def _can_review(member, trainer):
-    """(allowed, reason) — members review coaches they've trained with (session or course)."""
+    """(allowed, reason) — members review coaches they've trained with: a paid session that has started
+    (or that they missed), or one of the coach's courses they paid for and weren't refunded."""
     trained = TrainerSession.objects.filter(member=member, trainer=trainer).filter(
-        Q(status='completed') | Q(status='scheduled', scheduled_at__lte=timezone.now())).exists()
-    enrolled = Enrollment.objects.filter(member=member, course__trainer=trainer).exists()
+        Q(status__in=('completed', 'no_show')) | Q(status='scheduled', scheduled_at__lte=timezone.now())).exists()
+    enrolled = Enrollment.objects.filter(member=member, course__trainer=trainer,
+                                         status__in=REVIEWABLE_ENROLLMENTS).exists()
     if trained or enrolled:
         return True, ''
     return False, 'You can review this coach after a session with them or after joining one of their courses.'
@@ -379,6 +384,9 @@ def review_course(request, course_id):
     """
     course = get_object_or_404(Course, id=course_id, status='published')
 
+    if not Enrollment.objects.filter(member=request.user, course=course, status__in=REVIEWABLE_ENROLLMENTS).exists():
+        return Response({'detail': 'You can review this course after you join it.'},
+                        status=status.HTTP_400_BAD_REQUEST)
     if CourseReview.objects.filter(course=course, member=request.user).exists():
         return Response(
             {'detail': 'You already reviewed this course.'},
@@ -409,7 +417,7 @@ def review_trainer(request, trainer_id):
     trainer = get_object_or_404(TrainerProfile, id=trainer_id)
     allowed, why = _can_review(request.user, trainer)
     if not allowed:
-        return Response({'detail': why}, status=status.HTTP_403_FORBIDDEN)
+        return Response({'detail': why}, status=status.HTTP_400_BAD_REQUEST)
 
     errors = {}
     try:

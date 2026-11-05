@@ -9,5 +9,6 @@ urlpatterns = [
     path('check-ins/', views.check_ins, name='check-ins'),
     path('check-ins/<int:check_in_id>/check-out/', views.check_out, name='check-out'),
     path('pass/', views.my_pass, name='my-pass'),
+    path('referral/', views.my_referral, name='my-referral'),
     path('facilities/', views.my_facilities, name='my-facilities'),   # signed QR token; staff resolve it in Member Lookup
 ]

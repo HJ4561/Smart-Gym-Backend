@@ -49,7 +49,8 @@ def categories_list(request):
 def products_list(request):
     """
     GET /api/shop/products/
-    Query params: ?category=protein&search=&featured=true&in_stock=true
+    Query params: ?category=protein&search=&featured=true
+    Out-of-stock products are left out unless ?in_stock=false (the admin shop lists everything).
     """
     expire_stale_orders()
     qs = Product.objects.filter(is_active=True, category__is_active=True).select_related('category')
@@ -61,7 +62,7 @@ def products_list(request):
     if request.query_params.get('featured') == 'true':
         qs = qs.filter(is_featured=True)
 
-    if request.query_params.get('in_stock') == 'true':
+    if request.query_params.get('in_stock') != 'false':
         qs = qs.filter(stock_quantity__gt=0)
 
     search = request.query_params.get('search')

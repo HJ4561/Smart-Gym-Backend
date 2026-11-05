@@ -25,6 +25,8 @@ class User(AbstractUser):
     # The language they last used the portal in (sent with every request) — for text sent outside one.
     language = models.CharField(max_length=2, choices=[('en', 'English'), ('ar', 'Arabic')], default='en',
                                 db_default='en')
+    # Members' referral code (apps.members.referrals), made the first time they open it.
+    referral_code = models.CharField(max_length=12, unique=True, null=True, blank=True)
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
 

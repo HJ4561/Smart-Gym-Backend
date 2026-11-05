@@ -10,9 +10,11 @@ from .permissions import IsAdminUser
 
 
 def _range(request, default=30):
-    """(start datetime, days, label) from ?range=7d|30d|90d|ytd."""
+    """(start datetime, days, label) from ?range=1d|7d|30d|90d|ytd (1d = today since midnight, gym time)."""
     now = timezone.now()
     r = (request.query_params.get('range') or f'{default}d').lower()
+    if r == '1d':
+        return timezone.localtime(now).replace(hour=0, minute=0, second=0, microsecond=0), 1, 'Today'
     if r == 'ytd':
         start = now.replace(month=1, day=1, hour=0, minute=0, second=0, microsecond=0)
         return start, max(1, (now - start).days), 'Year to date'
