@@ -17,6 +17,7 @@ urlpatterns = [
     path('documents/<int:doc_id>/', views.document, name='document'),
     path('documents/<int:doc_id>/xml/', views.document_xml, name='document-xml'),
     path('documents/<int:doc_id>/send/', views.document_send, name='document-send'),
+    path('documents/<int:doc_id>/debit/', views.document_debit, name='document-debit'),
     path('retry/', views.retry, name='retry'),
     path('events/', views.events, name='events'),
     path('cron/', views.cron, name='cron'),

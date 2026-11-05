@@ -62,6 +62,7 @@ class PortalBase(APITestCase):
         return self.client.post(f'/api/payments/intents/{intent.id}/attach/', {'payment_id': pid}, format='json')
 
 
+@override_settings(LOCKER_CREDIT_ENABLED=True)   # tests the locker credit feature itself
 class TopUpTests(PortalBase):
     def test_free_topup_endpoint_is_gone(self):
         self.assertEqual(self.client.post('/api/payments/locker-credit/topup/', {'amount': 50}).status_code, 404)
@@ -118,6 +119,7 @@ class TopUpTests(PortalBase):
         self.assertEqual(self.client.post('/api/payments/intents/verify/', {'payment_id': 'pay_1'}, format='json').status_code, 400)
 
 
+@override_settings(LOCKER_CREDIT_ENABLED=True)   # tests the locker credit feature itself
 class ShopTests(PortalBase):
     def setUp(self):
         super().setUp()
@@ -185,6 +187,7 @@ class ShopTests(PortalBase):
         self.assertEqual(self.moyasar_pays(pay.data).data['status'], 'review')
 
 
+@override_settings(LOCKER_CREDIT_ENABLED=True)   # tests the locker credit feature itself
 class TrainerBookingTests(PortalBase):
     def setUp(self):
         super().setUp()

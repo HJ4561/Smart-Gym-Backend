@@ -7,6 +7,7 @@ app_name = 'admin_api'
 urlpatterns = [
     # Overview
     path('overview/', views.overview, name='overview'),
+    path('missing-arabic/', views.missing_arabic, name='missing-arabic'),
 
     # Members
     path('members/', members_ops.members_list, name='members-list'),

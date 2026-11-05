@@ -13,6 +13,7 @@ Admin API for ZATCA e-invoicing — /api/admin/zatca/
   GET   documents/<id>/                 one document with ZATCA's messages
   GET   documents/<id>/xml/             the signed XML
   POST  documents/<id>/send/            report it now
+  POST  documents/<id>/debit/           a debit note for an undercharge on that invoice
   POST  retry/                          resend everything that is due
   GET   events/                         audit log
   GET|POST cron/                        the retry job for a scheduler (X-Cron-Secret or Bearer token)
@@ -37,6 +38,8 @@ from rest_framework.decorators import api_view, authentication_classes, permissi
 from rest_framework.pagination import PageNumberPagination
 from rest_framework.permissions import AllowAny, BasePermission, IsAuthenticated
 from rest_framework.response import Response
+
+from apps.payments.receipts import receipt_url
 
 from . import crypto, environments, service
 from .models import BusinessCustomer, ZatcaConfig, ZatcaDevice, ZatcaDocument, ZatcaEvent
@@ -99,6 +102,9 @@ def _doc_row(doc, full=False):
             'has_cleared_copy': bool(doc.cleared_xml),
             'credit_notes': [{'id': n.id, 'number': n.number, 'total': n.total, 'status': n.status}
                              for n in doc.notes.all()],
+            'notes': [{'id': n.id, 'number': n.number, 'doc_type': n.doc_type, 'total': n.total, 'status': n.status}
+                      for n in doc.notes.all()],
+            'print_url': receipt_url('z', doc.id),
         })
     return row
 
@@ -312,6 +318,24 @@ def document_send(request, doc_id):
         return Response({'detail': f'This document is already {doc.get_status_display().lower()}.'}, status=400)
     doc = service.submit(doc.id)
     return Response(_doc_row(ZatcaDocument.objects.select_related('device', 'original').get(pk=doc.id), full=True))
+
+
+@api_view(['POST'])
+@permission_classes([IsGymAdmin])
+def document_debit(request, doc_id):
+    """
+    POST documents/<id>/debit/ {amount, reason, description?, collected_with?: cash | card_terminal}
+    A debit note for an undercharge on that invoice (amount = the extra, VAT included).
+    """
+    original = get_object_or_404(ZatcaDocument.objects.select_related('transaction__member', 'registration'), pk=doc_id)
+    try:
+        doc = service.debit_note(original, request.data.get('amount'), request.data.get('reason'),
+                                 description=request.data.get('description', ''),
+                                 collected_with=str(request.data.get('collected_with') or ''), staff=request.user)
+    except service.DebitNoteError as exc:
+        return Response(exc.errors, status=400)
+    doc = ZatcaDocument.objects.select_related('device', 'original', 'transaction').get(pk=doc.pk)
+    return Response(_doc_row(doc, full=True), status=201)
 
 
 @api_view(['POST'])

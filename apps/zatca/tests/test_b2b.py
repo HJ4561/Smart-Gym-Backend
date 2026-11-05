@@ -123,6 +123,7 @@ class CompanyInvoiceTests(TestCase):
         self.assertEqual((doc.status, doc.zatca_errors), ('rejected', ['BR-KSA-63 buyer address']))
 
 
+@override_settings(LOCKER_CREDIT_ENABLED=True)   # tests the locker credit feature itself
 @override_settings(ZATCA_ENCRYPTION_KEY=KEY, ZATCA_SEND_INLINE=True)
 class CompanyApiTests(APITestCase):
     def setUp(self):

@@ -212,10 +212,17 @@ def _tell_team(c, title, message, *, staff=True):
 
 
 def _cancel_paid(request, c):
+    from apps.payments.credit import RefundError
+    try:
+        return _cancel_paid_session(request, c)
+    except RefundError as exc:
+        return Response({'detail': str(exc)}, status=400)
+
+
+def _cancel_paid_session(request, c):
     from datetime import datetime, timedelta
-    from django.db.models import F
-    from apps.payments.gateway import paid_transaction, record_transaction
-    from apps.payments.models import LockerCredit
+    from apps.payments.credit import refund_cancellation, refund_words
+    from apps.payments.gateway import paid_transaction
     day = passes.parse_day(request.data.get('date'))
     if day is None:
         return Response({'detail': 'Whole-class bookings are refunded by the front desk — ask them to help.'}, status=400)
@@ -229,20 +236,20 @@ def _cancel_paid(request, c):
             return Response({'detail': f'Sessions can be cancelled up to {REFUND_HOURS} hours before they start.'}, status=400)
         p.is_cancelled = True
         p.save(update_fields=['is_cancelled'])
-        credit, _ = LockerCredit.objects.select_for_update().get_or_create(member=request.user)
-        LockerCredit.objects.filter(id=credit.id).update(balance=F('balance') + p.amount)
-        record_transaction(request.user, f'Refund — {c.name} on {day:%d %b}', 'refund', -p.amount,
-                           'Locker credit', f'class-pass:{p.id}',
-                           refund_of=paid_transaction(member=request.user, purpose='class_pass', gym_class=c,
-                                                      pass_kind='session', session_date=day))
+        found = dict(member=request.user, purpose='class_pass', gym_class=c, pass_kind='session', session_date=day)
+        where = refund_cancellation(request.user, p.amount, f'Refund — {c.name} on {day:%d %b}', f'class-pass:{p.id}',
+                                    refund_of=paid_transaction(**found), **found)
+    words = refund_words(where, p.amount)
     notify(request.user, 'attendance', bi('Session cancelled', 'تم إلغاء الجلسة'),
-           bi(f'SAR {p.amount} for {c.name} on {day:%a %d %b} is back in your locker credit.',
-              f'أُعيد {p.amount} ريال مقابل {ar(c, "name")} يوم {ar_day(day)} إلى رصيد خزانتك.'),
+           bi(f'{c.name} on {day:%a %d %b}: {words.en}', f'{ar(c, "name")} يوم {ar_day(day)}: {words.ar}'),
            icon='event_busy', action_label='View payments', action_path='/dashboard/payments')
     who = request.user.full_name or request.user.email
+    to_en, to_ar = {'credit': ('refunded to locker credit', 'أُعيد إلى رصيد الخزانة'),
+                    'card': ('refunded to their card', 'أُعيد إلى بطاقته'),
+                    'desk': ('paid at the desk — refund it there', 'دُفع في المكتب — أعده من هناك')}[where]
     _tell_team(c, bi('Class session cancelled', 'تم إلغاء جلسة حصة'),
-               bi(f'{who} cancelled their paid session of {c.name} on {day:%a %d %b} (SAR {p.amount} refunded to locker credit).',
-                  f'ألغى {who} جلسته المدفوعة في {ar(c, "name")} يوم {ar_day(day)} (أُعيد {p.amount} ريال إلى رصيد الخزانة).'))
+               bi(f'{who} cancelled their paid session of {c.name} on {day:%a %d %b} (SAR {p.amount} {to_en}).',
+                  f'ألغى {who} جلسته المدفوعة في {ar(c, "name")} يوم {ar_day(day)} ({p.amount} ريال {to_ar}).'))
     return Response({'detail': f'Cancelled — SAR {p.amount} is back in your locker credit.'})
 
 

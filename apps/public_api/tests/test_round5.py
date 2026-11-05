@@ -7,6 +7,7 @@ from datetime import datetime, time, timedelta
 from decimal import Decimal
 
 from django.contrib.auth import get_user_model
+from django.test import override_settings
 from django.utils import timezone
 from rest_framework.test import APITestCase
 
@@ -67,6 +68,7 @@ class FreeSessionTests(Base):
         self.assertEqual(self.book().data['status'], 'pending_payment')
 
 
+@override_settings(LOCKER_CREDIT_ENABLED=True)   # tests the locker credit feature itself
 class SeveralNutritionistsTests(Base):
     def nutritionist(self, name, price):
         u = User.objects.create_user(username=name, email=f'{name}@t.local', password=PW, role='nutritionist',
@@ -103,6 +105,7 @@ class SeveralNutritionistsTests(Base):
         self.assertEqual(NutritionPlan.objects.filter(member=self.member, status='pending_payment').count(), 2)
 
 
+@override_settings(LOCKER_CREDIT_ENABLED=True)   # tests the locker credit feature itself
 class ClassCancellationTests(Base):
     def make(self, **kw):
         nxt = timezone.localdate() + timedelta(days=3)

@@ -362,3 +362,15 @@ def facility_nodes(request):
             'status': 'congested' if util >= 85 else 'elevated' if util >= 60 else 'optimal',
         })
     return Response(nodes)
+
+
+# ============================================
+# MISSING ARABIC (what staff still need to translate)
+# ============================================
+@api_view(['GET'])
+@permission_classes([IsAuthenticated, IsAdminUser])
+def missing_arabic(request):
+    """GET /api/admin/missing-arabic/ → {total, groups: [{key, label, label_ar, count, items: [...]}]}."""
+    from apps.core.missing_arabic import missing_arabic as find
+    groups = find()
+    return Response({'total': sum(g['count'] for g in groups), 'groups': groups})

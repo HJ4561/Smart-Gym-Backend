@@ -137,6 +137,9 @@ SHOP_VAT_RATE = config('SHOP_VAT_RATE', default='0.15')   # Saudi VAT
 # Seller details printed on receipts; with a VAT number receipts also carry the ZATCA QR.
 GYM_LEGAL_NAME = config('GYM_LEGAL_NAME', default='Smart Gym')
 GYM_VAT_NUMBER = config('GYM_VAT_NUMBER', default='')
+# Locker credit (top-ups, paying with credit, refunds to credit) — off for now ("coming soon");
+# cancellations are refunded to the card instead. Nothing is deleted: set True to bring it back.
+LOCKER_CREDIT_ENABLED = config('LOCKER_CREDIT_ENABLED', default=False, cast=bool)
 # Referrals: the public website (its signup page is /join) and the locker credit a referrer gets.
 PUBLIC_SITE_URL = config('PUBLIC_SITE_URL', default='https://smart-gym-three.vercel.app')
 REFERRAL_REWARD_SAR = config('REFERRAL_REWARD_SAR', default='50')

@@ -4,6 +4,7 @@ from decimal import Decimal
 from unittest import mock
 
 from django.contrib.auth import get_user_model
+from django.test import override_settings
 from django.utils import timezone
 from rest_framework.test import APITestCase
 
@@ -71,6 +72,7 @@ class SignupFacilityTests(PaymentTestBase):
         self.assertIn('facilities', r.data)
 
 
+@override_settings(LOCKER_CREDIT_ENABLED=True)   # tests the locker credit feature itself
 class AddonTests(PortalBase):
     def setUp(self):
         super().setUp()
@@ -105,6 +107,7 @@ class AddonTests(PortalBase):
         self.assertEqual(self.checkout(purpose='facility_addon', facility_id=self.pool.id).status_code, 400)
 
 
+@override_settings(LOCKER_CREDIT_ENABLED=True)   # tests the locker credit feature itself
 class AdminOpsTests(PortalBase):
     def setUp(self):
         super().setUp()

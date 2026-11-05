@@ -13,6 +13,7 @@ from django.shortcuts import get_object_or_404
 from apps.public_api.moyasar import MoyasarError, MoyasarUnavailable
 
 from . import gateway
+from .credit import enabled as credit_enabled
 from .models import PaymentMethod, Transaction, LockerCredit, Invoice, PaymentIntent
 from .serializers import (
     PaymentMethodSerializer,
@@ -43,7 +44,7 @@ def payment_methods(request):
             seen.append(label)
     return Response({
         'recent': seen[:3],
-        'accepted': ['mada', 'Visa', 'Mastercard', 'STC Pay', 'Locker credit'],
+        'accepted': ['mada', 'Visa', 'Mastercard', 'STC Pay'] + (['Locker credit'] if credit_enabled() else []),
     })
 
 
@@ -93,7 +94,7 @@ def my_locker_credit(request):
     GET /api/payments/locker-credit/
     """
     credit, _ = LockerCredit.objects.get_or_create(member=request.user)
-    return Response(LockerCreditSerializer(credit).data)
+    return Response({**LockerCreditSerializer(credit).data, 'enabled': credit_enabled()})
 
 
 # ============================================
@@ -152,6 +153,7 @@ def payment_summary(request):
         'pending_amount': float(pending_amount),
         'refunded_amount': float(refunded_amount),
         'locker_credit': LockerCreditSerializer(credit).data,
+        'locker_credit_enabled': credit_enabled(),          # off: top-ups and paying with credit are "coming soon"
         'pending_invoices': Invoice.objects.filter(member=user, status='pending').count(),
     })
 
@@ -270,6 +272,12 @@ def receipt_page(request, token):
     if kind == 't':
         txn = Transaction.objects.select_related('member').filter(id=pk, amount__gt=0).first()
         data = from_transaction(txn) if txn else None
+    elif kind == 'z':
+        from apps.zatca.models import ZatcaDocument
+        from .receipts import from_document
+        doc = ZatcaDocument.objects.select_related('device', 'original__transaction__member', 'transaction',
+                                                   'registration').filter(id=pk).first()
+        data = from_document(doc) if doc else None
     elif kind == 'r':
         reg = MembershipRegistration.objects.select_related('plan').filter(id=pk, payment_status__in=['paid', 'refunded']).first()
         data = from_registration(reg) if reg else None

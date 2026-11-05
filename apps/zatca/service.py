@@ -18,7 +18,7 @@ import logging
 import threading
 import uuid
 from datetime import UTC, timedelta
-from decimal import Decimal
+from decimal import Decimal, InvalidOperation
 
 from django.conf import settings
 from django.db import close_old_connections, transaction as db_transaction
@@ -301,6 +301,66 @@ def on_refund(original_txn_id, refund_txn_id, reason=''):
                  customer_name=original.customer_name, transaction=refund, original=original,
                  reason=reason or refund.description, buyer=original.buyer if original.buyer_id else None,
                  buyer_details=original.buyer_details)
+
+
+# ---------------------------------------------------------------- debit notes
+DEBIT_MAX = Decimal('50000.00')
+DESK_LABELS = {'cash': 'Cash at desk', 'card_terminal': 'Card terminal at desk'}
+
+
+class DebitNoteError(Exception):
+    def __init__(self, errors):
+        super().__init__(str(errors))
+        self.errors = errors
+
+
+def debit_note(original, amount, reason, *, description='', collected_with='', staff=None):
+    """
+    Correct an undercharge on an issued invoice: a signed debit note for the extra `amount` (VAT included),
+    linked to the original and reported (or cleared, for a company invoice) like any invoice.
+    `collected_with` 'cash' / 'card_terminal' also records the extra money taken at the desk, so it shows
+    in the member's payments and the finance numbers. Raises DebitNoteError({field: message}).
+    """
+    from apps.payments.gateway import record_transaction
+    errors = {}
+    if original.doc_type != 'invoice':
+        errors['detail'] = 'Debit notes correct an invoice — open the original invoice.'
+    if original.status == 'rejected':
+        errors['detail'] = 'ZATCA rejected this invoice, so it can’t be corrected with a debit note.'
+    try:
+        amount = Decimal(str(amount)).quantize(Decimal('0.01'))
+        if not Decimal('0.01') <= amount <= DEBIT_MAX:
+            raise ValueError
+    except (InvalidOperation, TypeError, ValueError):
+        errors['amount'] = f'Enter the extra amount including VAT, from SAR 0.01 to SAR {DEBIT_MAX:,.0f}.'
+    reason = ' '.join(str(reason or '').split())
+    if not 3 <= len(reason) <= 200:
+        errors['reason'] = 'Say why the customer was undercharged (3–200 characters).'
+    description = ' '.join(str(description or '').split())[:120] or f'Correction to {original.number}'
+    if collected_with and collected_with not in DESK_LABELS:
+        errors['collected_with'] = 'Choose cash or the card terminal, or leave it empty.'
+    member = (original.transaction.member if original.transaction_id
+              else getattr(original.registration, 'created_user', None) if original.registration_id else None)
+    if collected_with and member is None:
+        errors['collected_with'] = ('This invoice has no member account to record the payment on. '
+                                    'Issue the debit note without recording a payment.')
+    if not is_on():
+        errors['detail'] = 'ZATCA e-invoicing is off — turn it on to issue debit notes.'
+    if errors:
+        raise DebitNoteError(errors)
+    with db_transaction.atomic():
+        txn = None
+        if collected_with:
+            kind = original.transaction.transaction_type if original.transaction_id else 'subscription'
+            txn = record_transaction(member, f'Debit note — {description}'[:200], kind, amount, DESK_LABELS[collected_with],
+                                     f'debit:{original.number}', email=False, invoice=False)
+        doc = issue('debit', [(description, 1, amount)], payment_label=DESK_LABELS.get(collected_with, original.payment_label),
+                    customer_name=original.customer_name, transaction=txn, original=original, reason=reason,
+                    buyer_details=original.buyer_details if original.is_standard else None)
+        if doc is None:
+            raise DebitNoteError({'detail': 'The debit note couldn’t be signed. Check the ZATCA activity log.'})
+    log('debit_note', actor=staff, device=doc.device, number=doc.number, original=original.number, amount=str(amount))
+    return doc
 
 
 def signup_items(reg):

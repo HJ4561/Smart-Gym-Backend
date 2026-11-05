@@ -9,6 +9,7 @@ from datetime import date, time, timedelta
 from decimal import Decimal
 
 from django.contrib.auth import get_user_model
+from django.test import override_settings
 from django.contrib.auth.tokens import default_token_generator
 from django.core import mail
 from django.core.files.uploadedfile import SimpleUploadedFile
@@ -60,6 +61,7 @@ class Base(APITestCase):
         self.nutritionist = NutritionistProfile.objects.create(user=diet_user, title='Dietitian', hourly_rate=Decimal('150'))
 
 
+@override_settings(LOCKER_CREDIT_ENABLED=True)   # tests the locker credit feature itself
 class NutritionPlanPaymentTests(Base):
     def test_request_waits_for_payment_then_starts_and_notes_show(self):
         self.client.force_authenticate(self.member)

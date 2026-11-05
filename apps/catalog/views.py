@@ -297,11 +297,18 @@ def cancel_session(request, session_id):
     """
     POST /api/catalog/sessions/<id>/cancel/
     """
-    # Unpaid bookings can always be cancelled. Paid ones up to REFUND_HOURS before the
-    # start, refunded to locker credit (instant, no card refund round-trip).
+    # Unpaid bookings can always be cancelled. Paid ones up to REFUND_HOURS before the start, refunded
+    # (apps.payments.credit: to locker credit when it is on, else to the card that paid).
     from apps.notifications.service import notify
-    from apps.payments.models import LockerCredit
+    from apps.payments.credit import RefundError, refund_cancellation, refund_words
 
+    try:
+        return _cancel_session(request, session_id, notify, refund_cancellation, refund_words)
+    except RefundError as exc:
+        return Response({'detail': str(exc)}, status=status.HTTP_400_BAD_REQUEST)
+
+
+def _cancel_session(request, session_id, notify, refund_cancellation, refund_words):
     with db_transaction.atomic():
         session = get_object_or_404(TrainerSession.objects.select_for_update(), id=session_id, member=request.user)
         if session.status == 'pending_payment':
@@ -328,19 +335,24 @@ def cancel_session(request, session_id):
         session.status = 'cancelled'
         session.save(update_fields=['status'])
         refund = session.amount_charged or 0
+        where = None
         if refund > 0:
-            credit, _ = LockerCredit.objects.select_for_update().get_or_create(member=request.user)
-            LockerCredit.objects.filter(id=credit.id).update(balance=F('balance') + refund)
-            from apps.payments.gateway import paid_transaction, record_transaction
-            record_transaction(request.user, f'Refund — cancelled session #{session.id}', 'refund', -refund,
-                               'Locker credit', f'session:{session.id}',
-                               refund_of=paid_transaction(trainer_session=session))
-    if refund > 0:
+            from apps.payments.gateway import paid_transaction
+            where = refund_cancellation(request.user, refund, f'Refund — cancelled session #{session.id}',
+                                        f'session:{session.id}', refund_of=paid_transaction(trainer_session=session),
+                                        trainer_session=session)
+    if where:
         from apps.core.i18n import bi
-        notify(request.user, 'trainer', bi('Session cancelled', 'تم إلغاء الجلسة'),
-               bi(f'SAR {refund} was refunded to your locker credit.', f'أُعيد {refund} ريال إلى رصيد خزانتك.'),
+        notify(request.user, 'trainer', bi('Session cancelled', 'تم إلغاء الجلسة'), refund_words(where, refund),
                icon='event_busy',
                action_label='View payments', action_path='/dashboard/payments')
+        if where == 'desk':
+            from apps.notifications.service import notify_staff
+            who = request.user.full_name or request.user.email
+            notify_staff('payment', bi('Refund at the desk', 'استرداد في مكتب الاستقبال'),
+                         bi(f'{who} cancelled session #{session.id}, paid at the desk: refund SAR {refund}.',
+                            f'ألغى {who} الجلسة رقم {session.id} المدفوعة في المكتب: أعد {refund} ريال.'),
+                         icon='undo', action_label='Open payments', action_path='/admin/finance')
     return Response(TrainerSessionSerializer(session).data)
 
 

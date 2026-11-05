@@ -74,6 +74,9 @@ def create_intent(member, purpose, data):
 
 
 def _build_topup(member, data):
+    from .credit import COMING_SOON, enabled
+    if not enabled():
+        raise PaymentError(COMING_SOON)
     try:
         amount = Decimal(str(data.get('amount'))).quantize(Decimal('0.01'))
     except (InvalidOperation, TypeError, ValueError):
@@ -314,6 +317,9 @@ def _source_label(source):
 # 3b. PAY WITH LOCKER CREDIT
 # ============================================================
 def pay_with_credit(intent):
+    from .credit import COMING_SOON, enabled
+    if not enabled():
+        raise PaymentError(COMING_SOON)
     if intent.purpose not in CREDIT_PURPOSES:
         raise PaymentError('Locker credit can’t be used for this payment.')
     with transaction.atomic():
@@ -624,11 +630,11 @@ def _fulfil_facility(intent):
 # ============================================================
 # 5. REFUNDS (staff)
 # ============================================================
-def refund_intent(intent, reason='', staff=None):
+def refund_intent(intent, reason='', staff=None, quiet=False):
     """
     Give the money of a paid / review intent back: to the card through Moyasar's
     refund API, or to locker credit when it was paid with credit. Records a
-    negative Transaction. Raises PaymentError / MoyasarError.
+    negative Transaction. Raises PaymentError / MoyasarError. `quiet`: the caller tells the member.
     """
     with transaction.atomic():
         intent = PaymentIntent.objects.select_for_update().get(id=intent.id)
@@ -650,9 +656,11 @@ def refund_intent(intent, reason='', staff=None):
         record_transaction(intent.member, f'Refund — {intent.description}'[:200], 'refund', -intent.amount,
                            label, f'refund:{intent.moyasar_payment_id or intent.id}', refund_of=intent.transaction)
         intent.status = 'refunded'
-        intent.failure_reason = (f'Refunded by {getattr(staff, "email", "staff")}: {reason}' if reason
-                                 else f'Refunded by {getattr(staff, "email", "staff")}')[:255]
+        who = getattr(staff, 'email', 'staff') if staff is not None or not quiet else 'the member (cancelled)'
+        intent.failure_reason = (f'Refunded by {who}: {reason}' if reason else f'Refunded by {who}')[:255]
         intent.save(update_fields=['status', 'failure_reason'])
+    if quiet:
+        return intent
     to_credit = intent.method == 'locker_credit'
     notify(intent.member, 'payment', bi('Refund issued', 'تم استرداد المبلغ'),
            bi(f'SAR {intent.amount} for "{intent.description}" was refunded'

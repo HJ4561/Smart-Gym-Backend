@@ -443,6 +443,14 @@ def change_session_status(session_id, new, by, trainer_id=None):
     """
     if new not in ('completed', 'no_show', 'cancelled'):
         return None, {'detail': 'Status must be completed, no_show or cancelled.'}
+    from apps.payments.credit import RefundError
+    try:
+        return _change_session_status(session_id, new, by, trainer_id)
+    except RefundError as exc:
+        return None, {'detail': str(exc)}
+
+
+def _change_session_status(session_id, new, by, trainer_id):
     with transaction.atomic():
         qs = TrainerSession.objects.select_for_update().select_related('trainer__user', 'member')
         if trainer_id is not None:
@@ -454,22 +462,22 @@ def change_session_status(session_id, new, by, trainer_id=None):
             return None, {'detail': 'This session hasn’t started yet — mark it after it begins.'}
         s.status = new
         s.save(update_fields=['status'])
+        where = None
         if new == 'cancelled' and s.amount_charged:
-            from apps.payments.models import LockerCredit
-            credit, _ = LockerCredit.objects.select_for_update().get_or_create(member=s.member)
-            LockerCredit.objects.filter(id=credit.id).update(balance=F('balance') + s.amount_charged)
-            gateway.record_transaction(s.member, f'Refund — session #{s.id} cancelled by {by}', 'refund',
-                                       -s.amount_charged, 'Locker credit', f'session:{s.id}',
-                                       refund_of=gateway.paid_transaction(trainer_session=s))
+            from apps.payments.credit import refund_cancellation
+            where = refund_cancellation(s.member, s.amount_charged, f'Refund — session #{s.id} cancelled by {by}',
+                                        f'session:{s.id}', refund_of=gateway.paid_transaction(trainer_session=s),
+                                        trainer_session=s)
     if new == 'cancelled':
+        from apps.payments.credit import refund_words
         at = timezone.localtime(s.scheduled_at)
         when = at.strftime('%d %b %H:%M')
         by_ar = 'النادي' if by == 'the gym' else by
         notify(s.member, 'trainer', bi(f'Session cancelled by {by}', f'ألغى {by_ar} الجلسة'),
                bi(f'Your session with {s.trainer.user.full_name} on {when} was cancelled',
                   f'أُلغيت جلستك مع {s.trainer.user.full_name} يوم {ar_date(at, with_year=False)} الساعة {at:%H:%M}')
-               + (bi(f'; SAR {s.amount_charged} is back in your locker credit.',
-                     f'، وأُعيد {s.amount_charged} ريال إلى رصيد خزانتك.') if s.amount_charged else bi('.', '.')),
+               + (bi(f'. {refund_words(where, s.amount_charged).en}', f'. {refund_words(where, s.amount_charged).ar}')
+                  if where else bi('.', '.')),
                icon='event_busy', priority='high', action_label='Book again',
                action_path=f'/dashboard/trainers/{s.trainer_id}')
     return _session_row(s), None

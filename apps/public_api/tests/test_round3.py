@@ -8,6 +8,7 @@ from datetime import date, datetime, time, timedelta
 from decimal import Decimal
 
 from django.apps import apps as django_apps
+from django.test import override_settings
 from django.contrib.auth import get_user_model
 from django.core import mail
 from django.utils import timezone
@@ -230,6 +231,7 @@ class TwoFactorTests(Base):
 
 
 # ------------------------------------------------------------------ coach portal
+@override_settings(LOCKER_CREDIT_ENABLED=True)   # tests the locker credit feature itself
 class CoachPortalTests(Base):
     def test_only_coaches_get_in(self):
         self.as_(self.member)
@@ -321,6 +323,7 @@ class CoachPortalTests(Base):
 
 
 # ------------------------------------------------------------------ machine videos
+@override_settings(LOCKER_CREDIT_ENABLED=True)   # tests the locker credit feature itself
 class VideoTierTests(Base):
     def setUp(self):
         super().setUp()
@@ -370,6 +373,7 @@ class VideoTierTests(Base):
 
 
 # ------------------------------------------------------------------ paid classes
+@override_settings(LOCKER_CREDIT_ENABLED=True)   # tests the locker credit feature itself
 class PaidClassTests(Base):
     def make(self, **kw):
         nxt = timezone.localdate() + timedelta(days=2)
