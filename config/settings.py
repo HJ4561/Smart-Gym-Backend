@@ -312,6 +312,17 @@ CORS_ALLOW_HEADERS = [
 # CUSTOM SETTINGS
 # ============================================
 FRONTEND_URL = config('FRONTEND_URL', default='http://localhost:5173')
+
+# Frontends that may always call this API, on top of the env lists above (CORS / CSRF) — and shown as portal
+# links in the admin Settings page. Added last, so emails keep using the first https portal in FRONTEND_URL.
+EXTRA_FRONTEND_ORIGINS = ['https://female-smart-gym.vercel.app']
+for _origin in EXTRA_FRONTEND_ORIGINS:
+    if _origin not in CORS_ALLOWED_ORIGINS:
+        CORS_ALLOWED_ORIGINS.append(_origin)
+    if _origin not in CSRF_TRUSTED_ORIGINS:
+        CSRF_TRUSTED_ORIGINS.append(_origin)
+    if _origin not in [u.strip().rstrip('/') for u in FRONTEND_URL.split(',')]:
+        FRONTEND_URL = f'{FRONTEND_URL},{_origin}' if FRONTEND_URL.strip() else _origin
 # Where new public contact-form messages are emailed (optional; they're always in the admin inbox).
 CONTACT_NOTIFY_EMAIL = config('CONTACT_NOTIFY_EMAIL', default='')
 
