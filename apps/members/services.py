@@ -5,13 +5,15 @@ from datetime import date, timedelta
 from dateutil.relativedelta import relativedelta
 from django.contrib.auth import get_user_model
 from django.contrib.auth.hashers import is_password_usable
-from django.core.mail import send_mail
 from django.db import transaction
 from django.utils import timezone
 from django.utils.crypto import get_random_string
 from django.conf import settings
 from decimal import Decimal
 import logging
+
+from apps.core.i18n import bi, language
+from apps.core.mail import send_localized
 
 from .models import MembershipRegistration, Membership
 
@@ -75,6 +77,7 @@ def approve_registration(reg: MembershipRegistration, approved_by=None):
         first_name=_split_name(reg.full_name)[0],
         last_name=_split_name(reg.full_name)[1],
         phone=reg.phone,
+        language=reg.language,       # emails and notifications in the language they signed up in
         role='member',
         is_verified=True,            # admin approved = verified
         is_active=True,
@@ -189,21 +192,20 @@ def reject_registration(reg: MembershipRegistration, reason: str = '', rejected_
     reg.save(update_fields=['status', 'rejection_reason', 'payment_status'])
     logger.info('Rejected registration #%s (refunded=%s): %s', reg.id, refunded, reason)
 
-    lines = [f'Hi {reg.full_name},', '', 'We could not approve your Smart Gym registration.']
+    en = [f'Hi {reg.full_name},', '', 'We could not approve your Smart Gym registration.']
+    ar = [f'مرحبًا {reg.full_name}،', '', 'لم نتمكن من الموافقة على تسجيلك في سمارت جيم.']
     if reason:
-        lines.append(f'Reason: {reason}')
+        en.append(f'Reason: {reason}')
+        ar.append(f'السبب: {reason}')
     if refunded:
-        lines += ['', f'Your payment of SAR {reg.payment_amount} has been refunded to your card. '
-                      'It can take 3–10 working days to appear.']
-    lines += ['', 'Questions? Reply to this email or visit the front desk.', '', '— Smart Gym', '', '────────────', '',
-              f'مرحبًا {reg.full_name}،', '', 'لم نتمكن من الموافقة على تسجيلك في سمارت جيم.']
-    if reason:
-        lines.append(f'السبب: {reason}')
-    if refunded:
-        lines += ['', f'تم استرداد مبلغ {reg.payment_amount} ريال إلى بطاقتك، وقد يستغرق ظهوره من 3 إلى 10 أيام عمل.']
-    lines += ['', 'لأي استفسار، رُد على هذه الرسالة أو تفضل بزيارة مكتب الاستقبال.', '', '— سمارت جيم']
+        en += ['', f'Your payment of SAR {reg.payment_amount} has been refunded to your card. '
+                   'It can take 3–10 working days to appear.']
+        ar += ['', f'تم استرداد مبلغ {reg.payment_amount} ريال إلى بطاقتك، وقد يستغرق ظهوره من 3 إلى 10 أيام عمل.']
+    en += ['', 'Questions? Reply to this email or visit the front desk.', '', '— Smart Gym']
+    ar += ['', 'لأي استفسار، رُد على هذه الرسالة أو تفضل بزيارة مكتب الاستقبال.', '', '— سمارت جيم']
     try:
-        send_mail('Your Smart Gym registration · تسجيلك في سمارت جيم', '\n'.join(lines), settings.DEFAULT_FROM_EMAIL, [reg.email])
+        send_localized(reg.email, reg.language, bi('Your Smart Gym registration', 'تسجيلك في سمارت جيم'),
+                       bi('\n'.join(en), '\n'.join(ar)))
     except Exception:   # noqa: BLE001 — the rejection stands even if the email fails
         logger.exception('Rejection email for registration #%s failed', reg.id)
     return refunded
@@ -294,12 +296,14 @@ def _send_welcome_email(user, membership, temp_password=None):
             f"  Email:       {user.email}\n\n"
         )
 
-    subject = 'Welcome to Smart Gym · مرحبًا بك في سمارت جيم — your membership is active'
+    subject = bi('Welcome to Smart Gym — your membership is active', 'مرحبًا بك في سمارت جيم — عضويتك مفعّلة')
+    plan_ar = membership.plan.display_name_ar or membership.plan.display_name
     login_ar = (
-        f"كلمة المرور المؤقتة: {temp_password}\nسيُطلب منك اختيار كلمة مرور جديدة عند أول تسجيل دخول.\n"
+        f"  كلمة المرور المؤقتة: {temp_password}\n\nمهم: هذه كلمة مرور مؤقتة، وسيُطلب منك اختيار كلمة مرورك عند أول "
+        f"تسجيل دخول. لا تشاركها مع أحد — موظفو سمارت جيم لن يطلبوها منك أبدًا.\n\n"
         if temp_password else "يمكنك الآن تسجيل الدخول بالبريد الإلكتروني وكلمة المرور التي أنشأتها عند التسجيل.\n"
     )
-    body = (
+    body_en = (
         f"Hi {user.first_name or user.email},\n\n"
         f"Your registration is approved! Your Smart Gym membership is now active.\n\n"
         f"  Pass ID:     {membership.pass_id}\n"
@@ -307,20 +311,22 @@ def _send_welcome_email(user, membership, temp_password=None):
         f"  Plan:        {membership.plan.display_name}\n"
         f"  Valid until: {membership.expiry_date}\n\n"
         f"{login}"
-        f"See you on the floor.\n— Smart Gym\n\n"
-        f"────────────\n\n"
+        f"See you on the floor.\n— Smart Gym"
+    )
+    body_ar = (
         f"مرحبًا {user.first_name or user.email}،\n\n"
         f"تمت الموافقة على تسجيلك، وعضويتك في سمارت جيم مفعّلة الآن.\n\n"
         f"  رقم البطاقة: {membership.pass_id}\n"
         f"  رقم الإقامة: {membership.iqama_number}\n"
-        f"  الخطة: {membership.plan.display_name}\n"
+        f"  الخطة: {plan_ar}\n"
         f"  صالحة حتى: {membership.expiry_date}\n\n"
         f"{login_ar}"
-        f"  صفحة الدخول: {member_portal_url()}/login\n\n"
+        f"  صفحة الدخول: {member_portal_url()}/login\n"
+        f"  البريد الإلكتروني: {user.email}\n\n"
         f"نراك في النادي.\n— سمارت جيم"
     )
     try:
-        send_mail(subject, body, settings.DEFAULT_FROM_EMAIL, [user.email])
+        send_localized(user.email, language(user), subject, bi(body_en, body_ar))
     except Exception:
         # Approval is already committed; don't fail it — but make it visible (without the body).
         logger.exception('Welcome email to %s failed to send.', user.email)

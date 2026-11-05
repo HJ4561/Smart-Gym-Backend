@@ -22,7 +22,6 @@ from datetime import timedelta
 from urllib.parse import quote
 
 from django.conf import settings
-from django.core.mail import send_mail
 from django.db import transaction
 from django.utils import timezone
 
@@ -172,15 +171,17 @@ def _send_email_code(user, code, purpose):
                              field='method')
     what = 'sign in' if purpose == 'login' else 'turn on 2-step verification'
     what_ar = 'تسجيل الدخول' if purpose == 'login' else 'تفعيل التحقق بخطوتين'
+    from apps.core.i18n import bi, language
+    from apps.core.mail import send_localized
+    name = user.first_name or user.email
     try:
-        send_mail(
-            f'Smart Gym code: {code} · رمز سمارت جيم',
-            f"Hi {user.first_name or user.email},\n\nYour Smart Gym code to {what} is:\n\n    {code}\n\n"
+        send_localized(user.email, language(user), bi(f'Smart Gym code: {code}', f'رمز سمارت جيم: {code}'), bi(
+            f"Hi {name},\n\nYour Smart Gym code to {what} is:\n\n    {code}\n\n"
             f"It works once and expires in {TICKET_MINUTES} minutes. If you didn't try to sign in, change your "
-            "password — someone knows it.\n— Smart Gym\n\n────────────\n\n"
-            f"رمز {what_ar} في سمارت جيم هو:\n\n    {code}\n\nيعمل مرة واحدة وينتهي خلال {TICKET_MINUTES} دقائق.\n— سمارت جيم",
-            settings.DEFAULT_FROM_EMAIL, [user.email],
-        )
+            "password — someone knows it.\n— Smart Gym",
+            f"مرحبًا {name}،\n\nرمز {what_ar} في سمارت جيم هو:\n\n    {code}\n\n"
+            f"يعمل مرة واحدة وينتهي خلال {TICKET_MINUTES} دقائق. إذا لم تحاول تسجيل الدخول فغيّر كلمة مرورك — "
+            "فهناك من يعرفها.\n— سمارت جيم"))
     except Exception:   # noqa: BLE001
         logger.exception('2FA code email to %s failed.', user.email)
         raise TwoFactorError('We couldn’t email the code right now. Try again in a minute or use an authenticator app.',

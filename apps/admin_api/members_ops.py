@@ -21,7 +21,8 @@ from rest_framework.pagination import PageNumberPagination
 from rest_framework.response import Response
 
 from apps.accounts.models import User
-from apps.core.i18n import ar_date, bi
+from apps.core.i18n import ar_date, bi, language
+from apps.core.mail import send_localized
 from apps.members.models import CheckIn, Membership, MembershipFacility
 from apps.members.serializers import MembershipSerializer
 from apps.notifications.service import notify
@@ -282,16 +283,16 @@ def _reset_password(u, staff):
     from apps.accounts.two_factor import forget_devices
     forget_devices(u)                       # new password → trusted browsers ask for a code again
     try:
-        send_mail('Smart Gym — your temporary password · كلمة المرور المؤقتة',
-                  f"Hi {u.first_name or u.email},\n\nA staff member reset your Smart Gym password.\n\n"
-                  f"  Login page:         {member_portal_url()}/login\n  Email:              {u.email}\n"
-                  f"  Temporary password: {temp}\n\nYou'll be asked to choose a new password when you log in.\n"
-                  f"If you didn't ask for this, contact the front desk.\n— Smart Gym\n\n────────────\n\n"
-                  f"مرحبًا {u.first_name or u.email}،\n\nأعاد أحد الموظفين تعيين كلمة مرورك في سمارت جيم.\n\n"
-                  f"  صفحة الدخول: {member_portal_url()}/login\n  البريد الإلكتروني: {u.email}\n"
-                  f"  كلمة المرور المؤقتة: {temp}\n\nسيُطلب منك اختيار كلمة مرور جديدة عند تسجيل الدخول.\n"
-                  f"إذا لم تطلب ذلك، تواصل مع مكتب الاستقبال.\n— سمارت جيم",
-                  settings.DEFAULT_FROM_EMAIL, [u.email])
+        send_localized(u.email, language(u), bi(
+            'Smart Gym — your temporary password', 'سمارت جيم — كلمة المرور المؤقتة'), bi(
+            f"Hi {u.first_name or u.email},\n\nA staff member reset your Smart Gym password.\n\n"
+            f"  Login page:         {member_portal_url()}/login\n  Email:              {u.email}\n"
+            f"  Temporary password: {temp}\n\nYou'll be asked to choose a new password when you log in.\n"
+            f"If you didn't ask for this, contact the front desk.\n— Smart Gym",
+            f"مرحبًا {u.first_name or u.email}،\n\nأعاد أحد الموظفين تعيين كلمة مرورك في سمارت جيم.\n\n"
+            f"  صفحة الدخول: {member_portal_url()}/login\n  البريد الإلكتروني: {u.email}\n"
+            f"  كلمة المرور المؤقتة: {temp}\n\nسيُطلب منك اختيار كلمة مرور جديدة عند تسجيل الدخول.\n"
+            f"إذا لم تطلب ذلك، تواصل مع مكتب الاستقبال.\n— سمارت جيم"))
     except Exception:   # noqa: BLE001
         logger.exception('Password reset email to %s failed.', u.email)
         return 'The password was reset but the email failed to send — try again.'

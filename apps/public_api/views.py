@@ -248,7 +248,10 @@ def public_register(request):
     if not serializer.is_valid():
         return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
 
-    reg = serializer.save()
+    # The site's language: an explicit "language" field, else the request's Accept-Language.
+    from apps.core.i18n import language
+    wanted = str(request.data.get('language') or '').lower()
+    reg = serializer.save(language=wanted if wanted in ('ar', 'en') else language())
     ratelimit.hit('signup_ip', ip)
     return Response(
         {**RegistrationStatusSerializer(reg).data, 'amount': str(reg.payment_amount),

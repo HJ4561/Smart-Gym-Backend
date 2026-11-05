@@ -10,7 +10,6 @@ import logging
 from datetime import date, time
 
 from django.conf import settings
-from django.core.mail import send_mail
 from django.db import transaction
 from django.db.models import Q
 from django.shortcuts import get_object_or_404
@@ -19,6 +18,8 @@ from rest_framework.decorators import api_view, permission_classes
 from rest_framework.response import Response
 
 from apps.accounts.models import User
+from apps.core.i18n import bi, language
+from apps.core.mail import send_localized
 from apps.staff.models import StaffProfile
 
 from .permissions import IsAdminUser
@@ -30,6 +31,8 @@ PORTAL_ROLES = {'admin', 'manager'}             # the admin console
 SIGN_IN_ROLES = PORTAL_ROLES | {'trainer'}      # + the coach portal
 LOGIN_PATH = {'admin': '/admin/login', 'manager': '/admin/login', 'trainer': '/coach/login'}
 ROLE_LABELS = dict(User.ROLE_CHOICES)
+ROLE_LABELS_AR = {'admin': 'المدير العام', 'manager': 'مدير الفرع', 'trainer': 'مدرب', 'nutritionist': 'أخصائي تغذية',
+                  'receptionist': 'موظف استقبال', 'member': 'عضو'}
 DEPARTMENTS = dict(StaffProfile.DEPARTMENT_CHOICES)
 STATUSES = dict(StaffProfile.STATUS_CHOICES)
 DEFAULT_DEPT = {'admin': 'executive', 'manager': 'operations', 'trainer': 'coaching',
@@ -94,22 +97,22 @@ def _invite(u, staff, reset=False):
     from apps.accounts.two_factor import forget_devices
     forget_devices(u)
     coach = u.role == 'trainer'
-    portal, portal_ar = ('coach portal', 'بوابة المدربين') if coach else ('admin', 'الإدارية')
+    portal, portal_ar = ('coach portal', 'بوابة المدربين') if coach else ('admin', 'لوحة الإدارة')
     link = f'{member_portal_url()}{LOGIN_PATH.get(u.role, "/admin/login")}'
     intro = (f'Your Smart Gym {portal} password was reset.' if reset
              else f'You’ve been added to the Smart Gym team as {ROLE_LABELS.get(u.role, u.role)}.')
     try:
         intro_ar = (f'أُعيد تعيين كلمة مرور حسابك ({portal_ar}) في سمارت جيم.' if reset
-                    else 'تمت إضافتك إلى فريق سمارت جيم.')
-        send_mail(f'Smart Gym — your {portal} sign-in · بيانات الدخول',
-                  f"Hi {u.first_name or u.email},\n\n{intro}\n\n"
-                  f"  Sign in at:         {link}\n  Email:              {u.email}\n"
-                  f"  Temporary password: {temp}\n\nYou'll choose your own password and set up 2-step verification "
-                  "when you first sign in.\n— Smart Gym\n\n"
-                  f"────────────\n\nمرحبًا {u.first_name or u.email}،\n\n{intro_ar}\n\n"
-                  f"  صفحة الدخول: {link}\n  البريد الإلكتروني: {u.email}\n"
-                  f"  كلمة المرور المؤقتة: {temp}\n\nستختار كلمة مرورك وتفعّل التحقق بخطوتين عند أول تسجيل دخول.\n— سمارت جيم",
-                  settings.DEFAULT_FROM_EMAIL, [u.email])
+                    else f'تمت إضافتك إلى فريق سمارت جيم بصفة {ROLE_LABELS_AR.get(u.role, u.role)}.')
+        send_localized(u.email, language(u), bi(
+            f'Smart Gym — your {portal} sign-in', f'سمارت جيم — بيانات الدخول إلى {portal_ar}'), bi(
+            f"Hi {u.first_name or u.email},\n\n{intro}\n\n"
+            f"  Sign in at:         {link}\n  Email:              {u.email}\n"
+            f"  Temporary password: {temp}\n\nYou'll choose your own password and set up 2-step verification "
+            "when you first sign in.\n— Smart Gym",
+            f"مرحبًا {u.first_name or u.email}،\n\n{intro_ar}\n\n"
+            f"  صفحة الدخول: {link}\n  البريد الإلكتروني: {u.email}\n"
+            f"  كلمة المرور المؤقتة: {temp}\n\nستختار كلمة مرورك وتفعّل التحقق بخطوتين عند أول تسجيل دخول.\n— سمارت جيم"))
     except Exception:   # noqa: BLE001
         logger.exception('Staff invite email to %s failed.', u.email)
         return 'The account is ready but the email failed to send — use “Send sign-in email” to retry.'

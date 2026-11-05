@@ -291,6 +291,8 @@ class MembershipRegistration(models.Model):
     payment_raw            = models.JSONField(null=True, blank=True)  # last payment object fetched from Moyasar
 
     # Meta
+    language         = models.CharField(max_length=2, choices=[('en', 'English'), ('ar', 'Arabic')],
+                                        db_default='en', default='en')   # emails before there is an account
     status           = models.CharField(max_length=30, choices=STATUS, default=STATUS_PENDING)
     submitted_at     = models.DateTimeField(auto_now_add=True)
     approved_at      = models.DateTimeField(null=True, blank=True)

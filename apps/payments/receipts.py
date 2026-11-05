@@ -121,7 +121,7 @@ def from_transaction(txn):
         'type_en': txn.get_transaction_type_display(), 'type_ar': TYPE_AR.get(txn.transaction_type, ''),
         'lines': lines, 'subtotal': subtotal, 'discount': discount, 'tax': tax, 'total': _money(txn.amount),
         'method': txn.payment_method_label or '—', 'reference': txn.gateway_reference or txn.transaction_id,
-        'order': order.order_number if order is not None else '',
+        'order': order.order_number if order is not None else '', 'lang': txn.member.language,
     }, _zatca_document(transaction=txn))
 
 
@@ -153,6 +153,7 @@ def from_registration(reg):
         'type_en': 'Membership registration', 'type_ar': TYPE_AR['registration'],
         'lines': lines, 'subtotal': _money(reg.payment_amount), 'discount': _money(0), 'tax': _money(0),
         'total': _money(reg.payment_amount), 'method': method, 'reference': reg.moyasar_payment_id or '',
+        'lang': reg.language,
     }, _zatca_document(registration=reg, doc_type='invoice'))
 
 
@@ -390,29 +391,41 @@ td.item div[dir=rtl]{{text-align:right;color:#333}} td.c{{text-align:center}}
 
 # ---------------------------------------------------------------- email
 def send_receipt_email(data):
-    """Bilingual 'payment received' email with the receipt link. Never raises."""
+    """
+    'Payment received' email with the receipt link. Never raises.
+    Always in both languages (it stands for the tax invoice); the reader's language comes first.
+    """
     if not data.get('email'):
         return
     url = receipt_url(data['kind'], data['pk'])
     s = seller()
+    name_ar = getattr(settings, 'GYM_LEGAL_NAME_AR', '') or s['name']
     when = timezone.localtime(data['when'])
-    items = '\n'.join(f"  - {l['en']}: SAR {l['amount']:.2f}" for l in data['lines'])
-    text = (f"Hi {data['customer']},\n\nWe received your payment of SAR {data['total']:.2f} on {when:%d %b %Y %H:%M}.\n\n"
-            f"{items}\n\n  Receipt: {data['number']}\n  Paid with: {data['method']}\n\nView or print your receipt: {url}\n\n"
-            f"— {s['name']}\n\n"
-            f"مرحبًا {data['customer']}،\n\nاستلمنا دفعتك بقيمة {data['total']:.2f} ريال.\nرقم الإيصال: {data['number']}\n"
-            f"لعرض الإيصال أو طباعته: {url}\n\n— {s['name']}")
-    html = (f"<div style='font-family:system-ui,sans-serif;max-width:560px'>"
-            f"<p>Hi {escape(data['customer'])},</p><p>We received your payment of <b>SAR {data['total']:.2f}</b>.</p>"
-            f"<p>Receipt <b>{escape(data['number'])}</b> · {escape(data['method'])}</p>"
-            f"<p><a href='{url}' style='background:#e51937;color:#fff;padding:10px 16px;border-radius:6px;text-decoration:none;font-weight:700'>"
-            f"View receipt · عرض الإيصال</a></p>"
-            f"<div dir='rtl' style='text-align:right;font-family:Tahoma,sans-serif;color:#333;margin-top:18px'>"
-            f"<p>مرحبًا {escape(data['customer'])}،</p><p>استلمنا دفعتك بقيمة <b>{data['total']:.2f} ريال</b>.</p>"
-            f"<p>رقم الإيصال <b>{escape(data['number'])}</b></p></div><p style='color:#888'>— {escape(s['name'])}</p></div>")
+    e = escape
+    items_en = '\n'.join(f"  - {l['en']}: SAR {l['amount']:.2f}" for l in data['lines'])
+    items_ar = '\n'.join(f"  - {l['ar'] or l['en']}: {l['amount']:.2f} ريال" for l in data['lines'])
+    text_en = (f"Hi {data['customer']},\n\nWe received your payment of SAR {data['total']:.2f} on {when:%d %b %Y %H:%M}.\n\n"
+               f"{items_en}\n\n  Receipt: {data['number']}\n  Paid with: {data['method']}\n\n"
+               f"View or print your receipt: {url}\n\n— {s['name']}")
+    text_ar = (f"مرحبًا {data['customer']}،\n\nاستلمنا دفعتك بقيمة {data['total']:.2f} ريال بتاريخ {when:%Y-%m-%d %H:%M}.\n\n"
+               f"{items_ar}\n\n  رقم الإيصال: {data['number']}\n  طريقة الدفع: {data['method']}\n\n"
+               f"لعرض الإيصال أو طباعته: {url}\n\n— {name_ar}")
+    button = (f"<p><a href='{url}' style='background:#e51937;color:#fff;padding:10px 16px;border-radius:6px;"
+              f"text-decoration:none;font-weight:700'>View receipt · عرض الإيصال</a></p>")
+    html_en = (f"<div><p>Hi {e(data['customer'])},</p><p>We received your payment of <b>SAR {data['total']:.2f}</b>.</p>"
+               f"<p>Receipt <b>{e(data['number'])}</b> · {e(data['method'])}</p><p style='color:#888'>— {e(s['name'])}</p></div>")
+    html_ar = (f"<div dir='rtl' lang='ar' style='text-align:right;font-family:Tahoma,sans-serif'>"
+               f"<p>مرحبًا {e(data['customer'])}،</p><p>استلمنا دفعتك بقيمة <b>{data['total']:.2f} ريال</b>.</p>"
+               f"<p>رقم الإيصال <b>{e(data['number'])}</b> · {e(data['method'])}</p><p style='color:#888'>— {e(name_ar)}</p></div>")
+    arabic_first = data.get('lang') == 'ar'
+    first, second = (html_ar, html_en) if arabic_first else (html_en, html_ar)
+    html = (f"<div style='font-family:system-ui,sans-serif;max-width:560px;color:#111'>{first}{button}"
+            f"<hr style='border:0;border-top:1px solid #ddd;margin:18px 0'>{second}</div>")
+    text = '\n\n────────────\n\n'.join((text_ar, text_en) if arabic_first else (text_en, text_ar))
+    subject = (f"تم استلام الدفع · Payment received — {data['number']}" if arabic_first
+               else f"Payment received · تم استلام الدفع — {data['number']}")
     try:
-        msg = EmailMultiAlternatives(f"Payment received · تم استلام الدفع — {data['number']}", text,
-                                     settings.DEFAULT_FROM_EMAIL, [data['email']])
+        msg = EmailMultiAlternatives(subject, text, settings.DEFAULT_FROM_EMAIL, [data['email']])
         msg.attach_alternative(html, 'text/html')
         msg.send()
     except Exception:   # noqa: BLE001 — the payment stands even if the email fails

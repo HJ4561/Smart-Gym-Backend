@@ -157,9 +157,10 @@ def forgot_password(request):
     import logging
     from django.conf import settings
     from django.contrib.auth.tokens import default_token_generator
-    from django.core.mail import send_mail
     from django.utils.encoding import force_bytes
     from django.utils.http import urlsafe_base64_encode
+    from apps.core.i18n import bi, language
+    from apps.core.mail import send_localized
     from apps.core.validators import email_error
     from apps.members.services import member_portal_url
 
@@ -186,17 +187,14 @@ def forgot_password(request):
     link = f"{member_portal_url()}/{'admin/' if staff else ''}reset-password?uid={uid}&token={token}"
     name = user.first_name or user.email
     try:
-        send_mail(
-            'Smart Gym — reset your password · إعادة تعيين كلمة المرور',
+        send_localized(user.email, language(user), bi(
+            'Smart Gym — reset your password', 'سمارت جيم — إعادة تعيين كلمة المرور'), bi(
             f"Hi {name},\n\nSomeone (hopefully you) asked to reset your Smart Gym password.\n"
             f"Open this link to choose a new one (it works once and expires in 3 days):\n\n  {link}\n\n"
-            "If you didn't ask for this, ignore this email — your password stays the same.\n— Smart Gym\n\n"
-            "────────────\n\n"
+            "If you didn't ask for this, ignore this email — your password stays the same.\n— Smart Gym",
             f"مرحبًا {name}،\n\nطُلب إعادة تعيين كلمة مرور حسابك في سمارت جيم.\n"
             f"افتح الرابط لاختيار كلمة مرور جديدة (يعمل مرة واحدة وينتهي خلال 3 أيام):\n\n  {link}\n\n"
-            "إذا لم تطلب ذلك فتجاهل هذه الرسالة.\n— سمارت جيم",
-            settings.DEFAULT_FROM_EMAIL, [user.email],
-        )
+            "إذا لم تطلب ذلك فتجاهل هذه الرسالة، وستبقى كلمة مرورك كما هي.\n— سمارت جيم"))
     except Exception:   # noqa: BLE001
         logging.getLogger(__name__).exception('Password reset email to %s failed.', user.email)
         return Response({'detail': 'We couldn’t send the email right now. Please try again later or contact the front desk.'},
