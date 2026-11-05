@@ -7,6 +7,7 @@ app_name = 'zatca'
 urlpatterns = [
     path('status/', views.status, name='status'),
     path('settings/', views.update_settings, name='settings'),
+    path('logo/', views.logo, name='logo'),
     path('onboard/start/', views.onboard_start, name='onboard-start'),
     path('onboard/<int:device_id>/otp/', views.onboard_otp, name='onboard-otp'),
     path('onboard/<int:device_id>/checks/', views.onboard_checks, name='onboard-checks'),

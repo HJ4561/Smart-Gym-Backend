@@ -36,6 +36,9 @@ class ZatcaConfig(models.Model):
     branch_name = models.CharField(max_length=80, default='Main Branch')
     business_category = models.CharField(max_length=60, default='Fitness')
     vat_rate = models.DecimalField(max_digits=5, decimal_places=2, default=Decimal('15.00'))
+    # Printed on the receipt only (never sent to ZATCA): the address in Arabic and the gym's logo.
+    address_ar = models.CharField(max_length=200, blank=True, db_default='')
+    logo = models.ImageField(upload_to='zatca/', blank=True, null=True)
     updated_at = models.DateTimeField(auto_now=True)
 
     SANDBOX_DEFAULTS = {

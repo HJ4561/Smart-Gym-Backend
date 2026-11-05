@@ -270,15 +270,24 @@ class ReceiptTests(TestCase):
         from apps.payments.receipts import from_transaction, render_html
         html = render_html(from_transaction(txn))
         doc = ZatcaDocument.objects.get(transaction=txn)
-        for text in ('Simplified tax invoice', 'فاتورة ضريبية مبسطة', doc.number, '100.00', '15.00', 'SAR 115.00',
-                     'TEST — not a legal tax invoice', 'End of invoice', '399999999900003'):
+        for text in ('SIMPLIFIED TAX INVOICE', 'فاتورة ضريبية مبسطة', doc.number, '100.00', '15.00', '115.00',
+                     'TEST / ', 'تجريبي', 'Not a legally valid invoice', 'ليست فاتورة ضريبية', 'Amounts in SAR',
+                     'End of invoice', 'نهاية الفاتورة', '399999999900003', 'Order type', 'نوع الطلب',
+                     'Price (excl. VAT)', 'Total incl. VAT', "id='zqr'"):
             self.assertIn(text, html)
+        # Item names in both languages: the Arabic line names the kind of payment.
+        self.assertIn("<div dir='rtl'>تدريب</div><div dir='ltr'>Course</div>", html)
 
-    def test_receipt_without_zatca_is_unchanged(self):
+    def test_receipt_without_zatca_is_a_plain_receipt(self):
         member = User.objects.create_user(username='m', email='m@t.local', password='x', role='member')
         txn = gateway.record_transaction(member, 'Course', 'coaching', Decimal('115.00'), 'mada', 'p', email=False)
         from apps.payments.receipts import from_transaction, render_html
-        self.assertIn('Receipt · إيصال', render_html(from_transaction(txn)))
+        html = render_html(from_transaction(txn))
+        self.assertIn('RECEIPT', html)
+        self.assertIn('إيصال', html)
+        self.assertNotIn('TEST / ', html)
+        self.assertIn('سمارت جيم', html)            # the gym's Arabic name next to the English
+
 
 
 @override_settings(ZATCA_ENCRYPTION_KEY=KEY, ZATCA_SEND_INLINE=True, ZATCA_CRON_SECRET='cron-secret-123')
@@ -287,6 +296,35 @@ class AdminApiTests(APITestCase):
         self.admin = User.objects.create_user(username='a', email='a@t.local', password='x', role='admin')
         self.manager = User.objects.create_user(username='g', email='g@t.local', password='x', role='manager')
         self.client.force_authenticate(self.admin)
+
+    @patch.object(client, 'report', return_value=REPORTED)
+    def test_receipt_logo_and_arabic_address(self, report):
+        import io
+        import tempfile
+        from django.core.files.uploadedfile import SimpleUploadedFile
+        from PIL import Image
+        png = io.BytesIO()
+        Image.new('RGB', (4, 4), 'red').save(png, 'PNG')
+        with tempfile.TemporaryDirectory() as media, override_settings(MEDIA_ROOT=media):
+            bad = self.client.post('/api/admin/zatca/logo/', {'logo': SimpleUploadedFile('x.png', b'no', 'image/png')})
+            self.assertEqual(bad.status_code, 400)
+            r = self.client.post('/api/admin/zatca/logo/', {'logo': SimpleUploadedFile('logo.png', png.getvalue(), 'image/png')})
+            self.assertEqual(r.status_code, 200)
+            self.assertIn('zatca/logo', r.data['logo_url'])
+            r = self.client.patch('/api/admin/zatca/settings/', {'address_ar': 'شارع الأمير سلطان، الرياض'}, format='json')
+            self.assertEqual(r.data['settings']['address_ar'], 'شارع الأمير سلطان، الرياض')
+            turn_on()
+            member = User.objects.create_user(username='m', email='m@t.local', password='x', role='member')
+            with self.captureOnCommitCallbacks(execute=True):
+                txn = gateway.record_transaction(member, 'Course', 'coaching', Decimal('115.00'), 'mada', 'p')
+            from apps.payments.receipts import from_transaction, render_html
+            html = render_html(from_transaction(txn))
+            self.assertIn('شارع الأمير سلطان، الرياض', html)
+            self.assertIn("class='logo'", html)
+            self.client.force_authenticate(self.manager)
+            self.assertEqual(self.client.delete('/api/admin/zatca/logo/').status_code, 403)
+            self.client.force_authenticate(self.admin)
+            self.assertEqual(self.client.delete('/api/admin/zatca/logo/').data['logo_url'], '')
 
     def test_status_never_shows_secrets_and_managers_can_only_look(self):
         make_device()

@@ -137,6 +137,8 @@ SHOP_VAT_RATE = config('SHOP_VAT_RATE', default='0.15')   # Saudi VAT
 # Seller details printed on receipts; with a VAT number receipts also carry the ZATCA QR.
 GYM_LEGAL_NAME = config('GYM_LEGAL_NAME', default='Smart Gym')
 GYM_VAT_NUMBER = config('GYM_VAT_NUMBER', default='')
+GYM_LEGAL_NAME_AR = config('GYM_LEGAL_NAME_AR', default='سمارت جيم')
+GYM_ADDRESS_AR = config('GYM_ADDRESS_AR', default='شارع الإمام محمد بن سعود، المنتزه، الخرج 16942، المملكة العربية السعودية')
 GYM_ADDRESS = config('GYM_ADDRESS', default='Al Imam Muhammad Ibn Saud St, Al Muntazah, Al-Kharj 16942, Saudi Arabia')
 # ZATCA Phase 2 e-invoicing (apps.zatca). The key encrypts the device's private key and ZATCA tokens at
 # rest; the cron secret guards the retry endpoint that an external scheduler calls every few minutes.

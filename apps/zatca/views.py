@@ -3,6 +3,7 @@ Admin API for ZATCA e-invoicing — /api/admin/zatca/
 
   GET   status/                         settings, device, counts (managers can look; only admins change)
   PATCH settings/                       seller details, VAT rate, the on/off switch
+  POST|DELETE logo/                     the logo printed on receipts (multipart `logo`)
   POST  onboard/start/                  go-live wizard: new device for an environment
   POST  onboard/<id>/otp/               … compliance certificate from the Fatoora OTP
   POST  onboard/<id>/checks/            … the three compliance checks
@@ -26,10 +27,12 @@ import hmac
 from decimal import Decimal, InvalidOperation
 
 from django.conf import settings
+from django.core.exceptions import ValidationError as DjangoValidationError
 from django.db.models import Q
 from django.http import Http404, HttpResponse
 from django.shortcuts import get_object_or_404
 from django.utils import timezone
+from rest_framework import serializers
 from rest_framework.decorators import api_view, authentication_classes, permission_classes
 from rest_framework.pagination import PageNumberPagination
 from rest_framework.permissions import AllowAny, BasePermission, IsAuthenticated
@@ -40,7 +43,7 @@ from .models import BusinessCustomer, ZatcaConfig, ZatcaDevice, ZatcaDocument, Z
 
 SETTINGS_FIELDS = ['seller_name_ar', 'seller_name_en', 'vat_number', 'crn', 'street', 'building_number',
                    'additional_number', 'district', 'city', 'postal_code', 'branch_name', 'business_category',
-                   'vat_rate']
+                   'vat_rate', 'address_ar']
 
 
 class IsGymAdmin(BasePermission):
@@ -100,12 +103,20 @@ def _doc_row(doc, full=False):
     return row
 
 
+def logo_url(cfg):
+    try:
+        return cfg.logo.url if cfg.logo else ''
+    except Exception:   # noqa: BLE001 — storage not reachable: the receipt prints without it
+        return ''
+
+
 def _status_payload():
     cfg = service.config()
     device = service.active_device(cfg)
     onboarding = ZatcaDevice.objects.filter(status='onboarding').first()
     return {
         'settings': {f: getattr(cfg, f) for f in SETTINGS_FIELDS},
+        'logo_url': logo_url(cfg),
         'enabled': cfg.enabled, 'enabled_at': cfg.enabled_at, 'environment': cfg.environment,
         'environment_label': environments.get(cfg.environment)['label'], 'test_mode': cfg.is_test,
         'locked_fields': service.locked_fields(cfg), 'problems': service.validate_seller(cfg),
@@ -167,6 +178,33 @@ def update_settings(request):
     if cfg.vat_rate != 15 and cfg.vat_rate != old_rate:
         out['warning'] = 'The Saudi VAT rate is 15%. Change it only if your tax advisor told you to.'
     return Response(out)
+
+
+@api_view(['POST', 'DELETE'])
+@permission_classes([IsGymAdmin])
+def logo(request):
+    """The logo printed at the top of receipts. POST multipart `logo` (PNG/JPG/WebP, up to 1 MB); DELETE removes it."""
+    cfg = service.config()
+    old = cfg.logo.name if cfg.logo else None
+    if request.method == 'DELETE':
+        cfg.logo = None
+    else:
+        field = serializers.ImageField()
+        try:
+            image = field.run_validation(request.data.get('logo'))
+        except (serializers.ValidationError, DjangoValidationError):
+            return Response({'logo': ['Choose a PNG, JPG or WebP image.']}, status=400)
+        if image.size > 1024 * 1024:
+            return Response({'logo': ['The logo must be 1 MB or smaller.']}, status=400)
+        cfg.logo = image
+    cfg.save(update_fields=['logo', 'updated_at'])
+    if old and old != (cfg.logo.name if cfg.logo else None):
+        try:
+            cfg.logo.storage.delete(old)
+        except Exception:   # noqa: BLE001 — a leftover file is harmless
+            pass
+    service.log('settings_changed', actor=request.user, fields=['logo'])
+    return Response(_status_payload())
 
 
 # ---------------------------------------------------------------- go-live wizard

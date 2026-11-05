@@ -104,7 +104,8 @@ class CompanyInvoiceTests(TestCase):
         from apps.payments.receipts import from_transaction, render_html
         html = render_html(from_transaction(txn))
         self.assertIn('Pending clearance', html)
-        self.assertIn('Tax invoice', html)
+        self.assertIn('TAX INVOICE', html)
+        self.assertIn('Buyer VAT No.', html)
         self.assertIn('311111111101113', html)
         ZatcaDocument.objects.filter(pk=doc.pk).update(next_attempt_at=None)
         with patch.object(client, 'clear', side_effect=cleared):

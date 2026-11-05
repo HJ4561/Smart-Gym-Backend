@@ -103,7 +103,8 @@ class ReceiptTests(APITestCase):
             page = self.client.get(f"/api/payments/receipts/{token_for('t', t.id)}/")
             self.assertEqual(page.status_code, 200)
             html = page.content.decode()
-            self.assertIn('Receipt · إيصال', html)
+            self.assertIn('RECEIPT', html)
+            self.assertIn('إيصال', html)
             self.assertIn('300000000000003', html)       # VAT number + ZATCA QR when configured
             self.assertIn("id='zqr'", html)
             with self.captureOnCommitCallbacks(execute=True):

@@ -430,6 +430,8 @@ MESSAGES = {
     '{0} signs in to the admin console.': 'يسجل {0} الدخول إلى لوحة الإدارة.',
     '{0} videos need a price from SAR 1 to SAR {1}.': 'تحتاج فيديوهات {0} إلى سعر من 1 إلى {1} ريال.',
     '{0} “{1}” already exists. Choose a different one.': '{0} «{1}» موجود مسبقًا. اختر غيره.',
+    'Choose a PNG, JPG or WebP image.': 'اختر صورة بصيغة PNG أو JPG أو WebP.',
+    'The logo must be 1 MB or smaller.': 'يجب ألا يزيد حجم الشعار عن 1 ميغابايت.',
 }
 
 # Developer-facing text that never reaches a member or staff screen.
