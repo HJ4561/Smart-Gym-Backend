@@ -209,10 +209,15 @@ RECEIPT_TITLE = ('RECEIPT', 'إيصال')
 
 
 def qr_svg(text):
-    """The QR as crisp inline SVG, drawn on the server: big enough modules and a 4-module quiet zone so phone
-    scanners (ZATCA's Fatoora app) read the long phase-2 code. Scales with CSS without blurring."""
+    """The QR as crisp inline SVG, drawn on the server: a 4-module quiet zone and whole pixels per module
+    (3px, or 2px for a very long code) so phone scanners (ZATCA's app) read it on screen, on 80mm paper
+    and in the PDF. A typical phase-2 code is about 67mm wide, inside the 72mm print area."""
     import segno
-    return segno.make(text, error='l', micro=False).svg_inline(scale=4, border=4, dark='#000', light='#fff', omitsize=True)
+    qr = segno.make(text, error='l', micro=False)
+    modules = qr.symbol_size(scale=1, border=4)[0]
+    px = modules * (3 if modules * 3 <= 272 else 2)          # 272px = the receipt's 72mm of print
+    svg = qr.svg_inline(scale=4, border=4, dark='#000', light='#fff', omitsize=True)
+    return svg.replace('<svg ', f'<svg style="width:{px}px" ', 1)
 
 
 def _config():
@@ -364,10 +369,11 @@ def render_html(data):
 *{{box-sizing:border-box}}
 body{{font-family:Poppins,'Noto Sans Arabic',system-ui,'Segoe UI',Tahoma,sans-serif;background:#f4f4f5;margin:0;padding:24px 12px;color:#111;font-size:12px}}
 [dir=rtl]{{font-family:'Noto Sans Arabic',Tahoma,'Segoe UI',sans-serif}}
-.r{{position:relative;overflow:hidden;max-width:400px;margin:auto;background:#fff;padding:18px 16px 22px;box-shadow:0 2px 12px rgba(0,0,0,.08)}}
+/* An 80mm till receipt, on screen and on paper / PDF alike (4mm side margins, 72mm of print). */
+.r{{position:relative;overflow:hidden;width:80mm;max-width:100%;margin:auto;background:#fff;padding:4mm 4mm 5mm;box-shadow:0 2px 12px rgba(0,0,0,.08)}}
 .test{{border:2px solid #111;text-align:center;padding:4px 6px 6px;margin-bottom:12px}}
 .test b{{display:block;font-size:17px}} .test small{{font-size:10px;color:#333}}
-.wm{{position:absolute;top:42%;left:50%;transform:translate(-50%,-50%) rotate(-30deg);font-size:64px;font-weight:700;color:rgba(0,0,0,.05);white-space:nowrap;pointer-events:none}}
+.wm{{position:absolute;top:42%;left:50%;transform:translate(-50%,-50%) rotate(-30deg);font-size:44px;font-weight:700;color:rgba(0,0,0,.05);white-space:nowrap;pointer-events:none}}
 .note{{border:1px dashed #b07a00;color:#7a5200;text-align:center;padding:6px;margin-bottom:10px;font-size:11px}}
 .head{{text-align:center}} .logo{{display:block;max-width:90px;max-height:90px;margin:0 auto 6px;object-fit:contain}}
 .name{{font-weight:700;font-size:15px;line-height:1.35}} .addr{{color:#333;line-height:1.4}}
@@ -377,18 +383,19 @@ body{{font-family:Poppins,'Noto Sans Arabic',system-ui,'Segoe UI',Tahoma,sans-se
 .dash{{border-top:1px dashed #555;margin:6px 0}}
 .num{{font-family:'Courier New',ui-monospace,monospace;font-variant-numeric:tabular-nums}}
 table{{width:100%;border-collapse:collapse;table-layout:fixed}}
-th{{font-size:9px;font-weight:700;vertical-align:bottom;padding:4px 2px;text-align:right;line-height:1.3}}
-th span{{display:block;font-weight:400}} th.item{{width:40%;text-align:left}} th.c{{width:9%;text-align:center}}
-td{{padding:5px 2px;vertical-align:top;text-align:right;font-size:12px}} td.item{{text-align:left;overflow-wrap:anywhere}}
+th{{font-size:8px;font-weight:700;vertical-align:bottom;padding:3px 1px;text-align:right;line-height:1.25}}
+th span{{display:block;font-weight:400}} th.item{{width:36%;text-align:left}} th.c{{width:9%;text-align:center}}
+td{{padding:4px 1px;vertical-align:top;text-align:right;font-size:11px}} td.item{{text-align:left;overflow-wrap:anywhere}}
 td.item div[dir=rtl]{{text-align:right;color:#333}} td.c{{text-align:center}}
 .cur{{text-align:center;font-size:10px;color:#444;margin:4px 0}}
 .tot{{display:flex;justify-content:space-between;align-items:flex-start;gap:10px;margin:4px 0}}
 .tot .lbl{{text-align:right}} .tot .lbl small{{display:block;font-size:10px;color:#444}}
 .tot.grand .num{{font-size:17px;font-weight:700}} .tot.grand .lbl span{{font-weight:700;font-size:14px}} .tot.grand .lbl small{{font-weight:700;color:#111}}
-#zqr{{display:flex;justify-content:center;margin:12px 0 4px}} #zqr svg{{width:min(300px,82vw);height:auto;display:block;shape-rendering:crispEdges}}
+#zqr{{display:flex;justify-content:center;margin:12px 0 4px}} #zqr svg{{max-width:100%;height:auto;display:block;shape-rendering:crispEdges}}
 .end{{text-align:center;font-weight:700;margin-top:8px}}
 .btn{{display:block;margin:16px auto 0;padding:9px 16px;background:#e51937;color:#fff;border:0;border-radius:6px;font-weight:700;cursor:pointer;font-family:inherit}}
-@media print{{body{{background:#fff;padding:0}}.r{{box-shadow:none;max-width:none}}.btn{{display:none}}@page{{margin:8mm}}}}
+@page{{size:80mm 297mm;margin:0}}
+@media print{{html,body{{background:#fff;padding:0;margin:0}}.r{{box-shadow:none;max-width:none;margin:0}}.btn{{display:none}}}}
 </style></head><body><div class="r">
 {banner}{pending}
 <div class="head">{logo}{names}{address}</div>
@@ -409,8 +416,25 @@ td.item div[dir=rtl]{{text-align:right;color:#333}} td.c{{text-align:center}}
 <div class="dash"></div>
 {qr_block}
 <div class="end">&lt;&lt;&lt;&lt; End of invoice / <span dir="rtl">نهاية الفاتورة</span> &gt;&gt;&gt;&gt;</div>
-<button class="btn" onclick="window.print()">Print / Save PDF · <span dir="rtl">طباعة</span></button>
 </div>
+<button class="btn" onclick="window.print()">Print / Save PDF · <span dir="rtl">طباعة</span></button>
+<script>
+/* The printed page is 80mm wide and exactly as tall as the receipt: one continuous strip, never split. */
+(function () {{
+  var page = document.createElement('style');
+  document.head.appendChild(page);
+  function fit() {{
+    var r = document.querySelector('.r');
+    if (!r) return;
+    var mm = Math.ceil(r.getBoundingClientRect().height * 25.4 / 96) + 1;
+    page.textContent = '@page{{size:80mm ' + mm + 'mm;margin:0}}';
+  }}
+  fit();
+  window.addEventListener('load', fit);
+  window.addEventListener('beforeprint', fit);
+  if (document.fonts && document.fonts.ready) document.fonts.ready.then(fit);
+}})();
+</script>
 </body></html>"""
 
 
