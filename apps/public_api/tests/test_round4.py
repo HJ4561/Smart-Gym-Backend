@@ -106,10 +106,12 @@ class GymWideSwitchTests(Base):
 
     def test_optional_for_staff_and_only_admins_change_it(self):
         mgr = User.objects.create_user(username='m', email='mg@t.local', password=PW, role='manager')
-        self.assertEqual(self.login(email='mg@t.local').data['two_factor'], 'setup')      # required by default
-        self.assertEqual(self.switch(mgr, two_factor_required_for_staff=False, password=PW).status_code, 403)
+        self.assertIn('access', self.login(email='mg@t.local').data)                     # optional by default
+        self.assertEqual(self.switch(mgr, two_factor_required_for_staff=True, password=PW).status_code, 403)
+        self.switch(self.admin, two_factor_required_for_staff=True, password=PW)
+        self.assertEqual(self.login(email='mg@t.local').data['two_factor'], 'setup')      # required once switched on
         self.switch(self.admin, two_factor_required_for_staff=False, password=PW)
-        self.assertIn('access', self.login(email='mg@t.local').data)                     # optional now
+        self.assertIn('access', self.login(email='mg@t.local').data)                     # optional again
         self.client.force_authenticate(self.admin)
         self.assertFalse(self.client.get('/api/admin/settings/').data['security']['required_for_staff'])
         # staff may turn their own 2FA off while it's optional

@@ -114,6 +114,8 @@ def security_settings(request):
         return Response({'detail': 'Only an admin can change sign-in security.'}, status=403)
     if not request.user.check_password(str(request.data.get('password') or '')):
         return Response({'password': 'Your password isn’t right.'}, status=400)
+    from apps.accounts.two_factor import policy
+    current = policy()
     s = SystemSettings.get_solo()
     sec = dict(s.security or {})
     changed, changed_ar = [], []
@@ -122,7 +124,7 @@ def security_settings(request):
                                   'إلزام الموظفين والمدربين بالتحقق بخطوتين')):
         if key in request.data:
             value = bool(request.data[key])
-            before = sec.get(key, True) is not False
+            before = current['enabled' if key == 'two_factor_enabled' else 'required_for_staff']
             if before != value:
                 changed.append(f'{label}: {"on" if value else "off"}')
                 changed_ar.append(f'{label_ar}: {"مفعّل" if value else "متوقف"}')

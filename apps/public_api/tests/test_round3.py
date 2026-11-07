@@ -153,7 +153,25 @@ class TwoFactorTests(Base):
     def login(self, email='a@t.local'):
         return self.client.post('/api/auth/login/', {'email': email, 'password': PW}, format='json')
 
+    def require_for_staff(self):
+        from apps.admin_api.models import SystemSettings
+        s = SystemSettings.get_solo()
+        s.security = {**(s.security or {}), 'two_factor_required_for_staff': True}
+        s.save()
+
+    def test_optional_by_default_and_staff_can_turn_it_off(self):
+        self.assertIn('access', self.login().data)                       # no setup step at sign-in
+        self.assertIn('access', self.login('c@t.local').data)
+        TwoFactor.objects.create(user=self.coach_user, method='totp', secret=two_factor.new_secret(), enabled=True)
+        self.as_(self.coach_user)
+        self.assertFalse(self.client.get('/api/auth/2fa/').data['required'])
+        code = two_factor.totp_now(TwoFactor.objects.get(user=self.coach_user).secret)
+        off = self.client.post('/api/auth/2fa/disable/', {'password': PW, 'code': code}, format='json')
+        self.assertEqual(off.status_code, 200, off.data)
+        self.assertFalse(off.data['enabled'])
+
     def test_admin_must_set_it_up_then_signs_in_with_app_codes(self):
+        self.require_for_staff()
         r = self.login()
         self.assertEqual(r.data['two_factor'], 'setup')
         self.assertNotIn('access', r.data)
@@ -218,6 +236,7 @@ class TwoFactorTests(Base):
         self.assertFalse(off.data['enabled'])
 
     def test_staff_cannot_turn_it_off_and_admins_can_reset_it(self):
+        self.require_for_staff()
         TwoFactor.objects.create(user=self.coach_user, method='totp', secret=two_factor.new_secret(), enabled=True)
         self.as_(self.coach_user)
         self.assertEqual(self.client.post('/api/auth/2fa/disable/', {'password': PW, 'code': '1'}, format='json')

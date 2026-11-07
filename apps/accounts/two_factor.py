@@ -3,13 +3,14 @@ Two-step sign-in. After the password is right, the person proves it's them with 
 from an authenticator app (TOTP, RFC 6238 — Google/Microsoft Authenticator, 1Password…) or a
 code sent to their email. Each person picks the method when they turn it on.
 
-Required for everyone who signs in to a staff portal (REQUIRED_ROLES); members can turn it on
-from their profile. The browser only ever holds a short-lived ticket until the second step
-passes — no tokens are issued before that.
+Optional for everyone: members, coaches and staff turn it on (and off) from their profile. An
+admin can make it compulsory for staff portal roles (REQUIRED_ROLES) — then they set it up at
+sign-in and can't turn it off. The browser only ever holds a short-lived ticket until the second
+step passes — no tokens are issued before that.
 
 The code is asked for once per device: after it passes, the browser can be trusted for
 TRUST_DAYS days (TrustedDevice). Admins can switch 2-step verification off for the whole gym, or
-make it optional for staff (Admin → Settings → Security; SystemSettings.security).
+make it required for staff (Admin → Settings → Security; SystemSettings.security).
 """
 import base64
 import hashlib
@@ -51,11 +52,11 @@ class TwoFactorError(Exception):
 
 
 def policy():
-    """{'enabled': ask for codes at all, 'required_for_staff': staff roles must set it up}."""
+    """{'enabled': ask for codes at all, 'required_for_staff': staff roles must set it up (off unless an admin turns it on)}."""
     from apps.admin_api.models import SystemSettings
     sec = SystemSettings.get_solo().security or {}
     return {'enabled': sec.get('two_factor_enabled', True) is not False,
-            'required_for_staff': sec.get('two_factor_required_for_staff', True) is not False}
+            'required_for_staff': sec.get('two_factor_required_for_staff', False) is True}
 
 
 def is_required(user):
