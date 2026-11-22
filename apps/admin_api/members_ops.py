@@ -127,11 +127,22 @@ def member_stats(request):
     })
 
 
-@api_view(['GET'])
-@permission_classes([DeskRead('members')])
+@api_view(['GET', 'DELETE'])
+@permission_classes([DeskRead('members')])      # the front desk views; only admins and managers delete
 def member_detail(request, user_id):
-    """GET /api/admin/members/<id>/ — the member file."""
+    """
+    GET /api/admin/members/<id>/ — the member file.
+    DELETE — never paid: deleted completely; paid: account closed and personal data wiped, payments and
+    invoices kept for ZATCA (apps.members.erase). → {outcome: deleted|erased, detail}
+    """
     u = get_object_or_404(User.objects.select_related('membership__plan'), id=user_id)
+    if request.method == 'DELETE':
+        if u.role != 'member':
+            return Response({'detail': 'Only member accounts can be deleted here. Remove staff from Team.'}, status=400)
+        from apps.members.erase import erase_member
+        outcome = erase_member(u, request.user)
+        return Response({'outcome': outcome, 'detail': 'Member deleted.' if outcome == 'deleted' else
+                         'Member deleted. Their payments and invoices are kept for tax records, without their details.'})
     m = getattr(u, 'membership', None)
     today = timezone.localdate()
     credit = LockerCredit.objects.filter(member=u).first()
