@@ -160,19 +160,51 @@ def filter_plans(qs, params):
     return qs
 
 
-@api_view(['GET'])
+@api_view(['GET', 'POST'])
 @permission_classes([IsAdminUser])
 def plans(request):
-    """GET /api/admin/nutrition/plans/?status=to_review|active|all&q=&goal=&nutritionist="""
-    qs = NutritionPlan.objects.select_related('member', 'nutritionist__user').order_by('reviewed_at', '-created_at')
-    return Response([_plan_row(p) for p in filter_plans(qs, request.query_params)[:200]])
+    """
+    GET  /api/admin/nutrition/plans/?status=to_review|active|all&q=&goal=&nutritionist=
+    POST {member_id, nutritionist_id, name?, goal?, target_calories?, target_protein_g?, target_carbs_g?,
+          target_fats_g?, target_water_ml?, cycle_weeks?, notes?} — a plan set up by the gym: active at once,
+          no consultation fee; the member is told.
+    """
+    if request.method == 'GET':
+        qs = NutritionPlan.objects.select_related('member', 'nutritionist__user').order_by('reviewed_at', '-created_at')
+        return Response([_plan_row(p) for p in filter_plans(qs, request.query_params)[:200]])
+    errors = {}
+    member = User.objects.filter(id=request.data.get('member_id'), role='member', is_active=True).first()
+    if member is None:
+        errors['member_id'] = 'Choose a member.'
+    n = NutritionistProfile.objects.select_related('user').filter(id=request.data.get('nutritionist_id')).first()
+    if n is None:
+        errors['nutritionist_id'] = 'Choose a nutritionist.'
+    if not errors and NutritionPlan.objects.filter(member=member, nutritionist=n, status='active').exists():
+        errors['member_id'] = 'This member already has an active plan with this nutritionist — edit that one instead.'
+    if errors:
+        return Response(errors, status=400)
+    p = NutritionPlan(member=member, nutritionist=n, status='active', price=0)
+    response = update_plan(p, {k: v for k, v in request.data.items() if k not in ('member_id', 'nutritionist_id', 'status')})
+    if response.status_code == 200:
+        response.status_code = 201
+    return response
 
 
-@api_view(['PATCH'])
+@api_view(['PATCH', 'DELETE'])
 @permission_classes([IsAdminUser])
 def plan_update(request, plan_id):
-    """PATCH targets / notes / status — marks the plan reviewed and tells the member."""
+    """
+    PATCH targets / notes / status — marks the plan reviewed and tells the member.
+    DELETE — removes a plan nobody paid for; a paid plan is archived instead (its payment keeps its link).
+    """
     p = get_object_or_404(NutritionPlan.objects.select_related('member', 'nutritionist__user'), id=plan_id)
+    if request.method == 'DELETE':
+        from apps.payments.models import PaymentIntent
+        if PaymentIntent.objects.filter(nutrition_plan=p, status='paid').exists():
+            return Response({'detail': 'The member paid for this plan, so it can’t be deleted — set it to Archived instead.'},
+                            status=400)
+        p.delete()
+        return Response(status=204)
     return update_plan(p, request.data)
 
 
