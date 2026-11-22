@@ -1,5 +1,7 @@
 # apps/admin_api/urls.py
 from django.urls import path
+from apps.catalog import admin_reviews
+
 from . import catalog_ops, console, desk_ops, finance, insights, machines_ops, members_ops, nutrition_ops, ops, shop_ops, staff_ops, system_ops, views
 
 app_name = 'admin_api'
@@ -10,6 +12,10 @@ urlpatterns = [
     path('missing-arabic/', views.missing_arabic, name='missing-arabic'),
 
     # Members
+    # Reviews (course and coach reviews by members)
+    path('reviews/', admin_reviews.reviews, name='reviews'),
+    path('reviews/<str:kind>/<int:review_id>/', admin_reviews.review_detail, name='review-detail'),
+
     # Front desk
     path('desk/today/', desk_ops.desk_today, name='desk-today'),
     path('desk/walk-in/', desk_ops.walk_in, name='desk-walk-in'),
