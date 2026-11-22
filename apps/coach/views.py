@@ -55,9 +55,13 @@ def _f(v):
 # ============================================================
 # PROFILE + DASHBOARD
 # ============================================================
-COACH_EDITABLE = ('first_name', 'last_name', 'phone', 'title', 'title_ar', 'credentials', 'credentials_ar', 'bio', 'bio_ar',
-                  'specialties', 'specialties_ar',
-                  'years_experience', 'is_accepting_clients', 'offers_1on1')
+# What members see on the coach's card waits for an admin (apps.approvals, kind coach.profile);
+# the coach's own settings change at once.
+COACH_PUBLIC = ('first_name', 'last_name', 'title', 'title_ar', 'credentials', 'credentials_ar', 'bio', 'bio_ar',
+                'specialties', 'specialties_ar', 'years_experience')
+COACH_DIRECT = ('phone', 'is_accepting_clients', 'offers_1on1')
+COACH_EDITABLE = COACH_PUBLIC + COACH_DIRECT
+SENT = 'Sent to an admin for approval. Members keep seeing the current version until then.'
 
 
 def _earnings(t, since=None):
@@ -79,7 +83,10 @@ def _earnings(t, since=None):
 def _profile_row(t):
     u = t.user
     now = timezone.now()
+    from apps.approvals.registry import pending_for
     row = catalog_ops._trainer_row(t, catalog_ops._trainer_counts([t.id]))
+    waiting = pending_for('coach.profile', t.pk).filter(kind='update').first()
+    row['pending_change'] = waiting.payload if waiting else None     # a profile change waiting for an admin
     students = (Enrollment.objects.filter(course__trainer=t, status='active').values('member').distinct().count())
     row.update({
         'avatar': u.avatar.url if u.avatar else None,
@@ -104,17 +111,32 @@ def _profile_row(t):
 @api_view(['GET', 'PATCH'])
 @permission_classes([IsCoach])
 def me(request):
-    """GET /api/coach/me/ · PATCH name, phone, title, credentials, bio, specialties, years, booking switches."""
+    """
+    GET /api/coach/me/ · PATCH: phone and the booking switches change at once; name, title, credentials, bio,
+    specialties and years go to an admin first (202, `pending_change`) — members keep the current profile.
+    """
     t = _me(request)
     if request.method == 'PATCH':
-        data = {k: v for k, v in request.data.items() if k in COACH_EDITABLE}
+        direct = {k: v for k, v in request.data.items() if k in COACH_DIRECT}
+        public = {k: v for k, v in request.data.items() if k in COACH_PUBLIC}
         errors = {}
-        catalog_ops._apply_trainer(t, t.user, data, errors)
-        if errors:
-            return Response(errors, status=400)
-        with transaction.atomic():
-            t.user.save()
-            t.save()
+        if direct:
+            catalog_ops._apply_trainer(t, t.user, direct, errors)
+            if errors:
+                return Response(errors, status=400)
+            with transaction.atomic():
+                t.user.save()
+                t.save()
+        cr = None
+        if public:
+            from apps.approvals.registry import submit_update
+            cr, errors = submit_update(request.user, 'coach.profile', t, public)
+            if errors:
+                return Response(errors, status=400)
+        row = _profile_row(t)
+        if cr is not None:
+            return Response({**row, 'detail': SENT}, status=202)
+        return Response(row)
     return Response(_profile_row(t))
 
 
@@ -122,14 +144,16 @@ def me(request):
 @permission_classes([IsCoach])
 @parser_classes([MultiPartParser, FormParser])
 def me_photo(request):
-    """POST /api/coach/me/photo/ multipart {image} — the photo members see."""
+    """POST /api/coach/me/photo/ multipart {image} — the photo members see; it waits for an admin (202)."""
     t = _me(request)
     url, err = catalog_ops._save_image(request, 'trainers')
     if err:
         return Response({'image': [err]}, status=400)
-    t.photo_url = url
-    t.save(update_fields=['photo_url', 'updated_at'])
-    return Response(_profile_row(t))
+    from apps.approvals.registry import submit_update
+    cr, errors = submit_update(request.user, 'coach.profile', t, {'photo_url': url})
+    if errors:
+        return Response(errors, status=400)
+    return Response({**_profile_row(t), 'detail': SENT}, status=202)
 
 
 @api_view(['GET'])

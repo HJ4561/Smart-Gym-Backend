@@ -282,3 +282,41 @@ def _coach_kinds():
 
 
 _coach_kinds()
+
+
+# ---------------------------------------------------------------- coach profile (what members read)
+def _coach_profile_kind():
+    from apps.admin_api.catalog_ops import _apply_trainer
+    from apps.catalog.models import TrainerProfile
+    from apps.coach.views import COACH_PUBLIC
+
+    def apply(t, data):
+        errors = {}
+        safe = {k: v for k, v in data.items() if k in COACH_PUBLIC}
+        _apply_trainer(t, t.user, safe, errors)
+        if 'photo_url' in data:
+            url = str(data.get('photo_url') or '')
+            if len(url) > 500 or (url and not url.startswith(('/', 'http://', 'https://'))):
+                errors['photo_url'] = 'Upload the photo again.'
+            else:
+                t.photo_url = url
+        return errors
+
+    def snapshot(t):
+        row = {'first_name': t.user.first_name, 'last_name': t.user.last_name}
+        row.update({f: getattr(t, f) for f in COACH_PUBLIC if f not in ('first_name', 'last_name')})
+        row['photo_url'] = t.photo_url
+        return row
+
+    def save(t):
+        t.user.save()          # the name lives on the account
+        t.save()
+
+    register('coach.profile', label='Coach profile', label_ar='ملف المدرب', model=TrainerProfile,
+             describe=lambda t: t.user.full_name or t.user.email, snapshot=snapshot, apply=apply, save=save,
+             owner_path='/coach/profile', admin_path='/admin/trainers',
+             editable=('first_name', 'last_name', 'title', 'title_ar', 'credentials', 'credentials_ar', 'bio', 'bio_ar',
+                       'specialties', 'years_experience'))
+
+
+_coach_profile_kind()

@@ -108,3 +108,25 @@ class CoachUpgradeTests(APITestCase):
         self.assertEqual(self.course.modules.count(), 1)
         approve(ChangeRequest.objects.get(target_type='coach.course'), self.admin)
         self.assertEqual(self.course.modules.count(), 2)
+
+
+class CoachProfileApprovalTests(APITestCase):
+    def setUp(self):
+        self.admin = User.objects.create_user(username='ad', email='ad@t.local', password='x', role='admin')
+        cu = User.objects.create_user(username='co', email='co@t.local', password='x', role='trainer', first_name='Omar')
+        self.coach = TrainerProfile.objects.create(user=cu, title='Coach', hourly_rate=Decimal('100'))
+        self.client.force_authenticate(cu)
+
+    def test_name_and_title_wait_and_admin_can_edit_before_approving(self):
+        r = self.client.patch('/api/coach/me/', {'first_name': 'Omari', 'title': 'Head coach', 'phone': '0551234567'},
+                              format='json')
+        self.assertEqual(r.status_code, 202, r.data)
+        self.coach.refresh_from_db()
+        self.coach.user.refresh_from_db()
+        self.assertEqual((self.coach.user.first_name, self.coach.title), ('Omar', 'Coach'))
+        self.assertTrue(self.coach.user.phone)                        # private settings change at once
+        approve(ChangeRequest.objects.get(target_type='coach.profile'), self.admin,
+                payload={'first_name': 'Omari', 'title': 'Senior coach'})
+        self.coach.refresh_from_db()
+        self.coach.user.refresh_from_db()
+        self.assertEqual((self.coach.user.first_name, self.coach.title), ('Omari', 'Senior coach'))

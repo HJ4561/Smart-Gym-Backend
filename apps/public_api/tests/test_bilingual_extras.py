@@ -47,7 +47,9 @@ class BilingualExtrasTests(APITestCase):
         self.assertEqual((r.data['credentials_ar'], r.data['specialties_ar']), ('مدرب معتمد', ['القوة', 'المرونة', 'إنقاص الوزن']))
         self.client.force_authenticate(coach)
         r = self.client.patch('/api/coach/me/', {'specialties_ar': ['القوة']}, format='json')
-        self.assertEqual(r.data['specialties_ar'], ['القوة'])
+        self.assertEqual(r.status_code, 202)                   # a coach's profile change waits for an admin
+        from apps.approvals.testing import approve_pending
+        approve_pending()
         self.client.force_authenticate(self.member)
         row = next(x for x in self.client.get('/api/catalog/trainers/').data if x['id'] == t.id)
         self.assertEqual((row['credentials_ar'], row['specialties_ar']), ('مدرب معتمد', ['القوة']))

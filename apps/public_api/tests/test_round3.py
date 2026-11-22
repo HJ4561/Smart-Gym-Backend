@@ -264,7 +264,11 @@ class CoachPortalTests(Base):
         self.as_(self.coach_user)
         r = self.client.patch('/api/coach/me/', {'bio': 'Strength coach.', 'hourly_rate': 1, 'is_verified': True},
                               format='json')
-        self.assertEqual((r.data['bio'], r.data['hourly_rate'], r.data['is_verified']), ('Strength coach.', 100.0, False))
+        # The bio waits for an admin; the price and verification can't be set by the coach at all.
+        self.assertEqual((r.status_code, r.data['pending_change'], r.data['hourly_rate'], r.data['is_verified']),
+                         (202, {'bio': 'Strength coach.'}, 100.0, False))
+        r = self.client.patch('/api/coach/me/', {'is_accepting_clients': False}, format='json')
+        self.assertEqual((r.status_code, r.data['is_accepting_clients']), (200, False))     # booking switches: at once
         h = self.client.put('/api/coach/hours/', {'hourly_rate': 1, 'windows': [
             {'day_of_week': 0, 'start_time': '09:00', 'end_time': '12:00'}]}, format='json')
         self.assertEqual((h.data['hourly_rate'], len(h.data['windows'])), ('100.00', 1))

@@ -91,7 +91,10 @@ class BilingualDataTests(APITestCase):
     def test_coach_writes_arabic_but_not_a_live_courses_title(self):
         self.client.force_authenticate(self.coach)
         r = self.client.patch('/api/coach/me/', {'bio_ar': 'أحب تمارين القوة'}, format='json')
-        self.assertEqual((r.status_code, r.data['bio_ar']), (200, 'أحب تمارين القوة'))
+        self.assertEqual((r.status_code, r.data['pending_change']['bio_ar']), (202, 'أحب تمارين القوة'))   # waits for an admin
+        from apps.approvals.testing import approve_pending
+        approve_pending()
+        self.assertEqual(self.client.get('/api/coach/me/').data['bio_ar'], 'أحب تمارين القوة')
         course = Course.objects.create(trainer=self.trainer, title='Live', description='x', category='Strength',
                                        status='published')
         # A live course's changes wait for an admin (apps.approvals): members keep the current title.
