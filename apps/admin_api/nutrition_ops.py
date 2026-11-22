@@ -65,6 +65,8 @@ def nutritionists(request):
     if msg:
         errors['email'] = msg
     u = User.objects.filter(email__iexact=email).first() if email else None
+    if u is None and email and User._base_manager.filter(email__iexact=email).exists():
+        errors['email'] = 'This email is already used by an account at the other gym.'
     if u is not None and NutritionistProfile.objects.filter(user=u).exists():
         errors['email'] = 'This person is already a nutritionist.'
     if u is None:
@@ -138,22 +140,32 @@ def _plan_row(p):
     }
 
 
-@api_view(['GET'])
-@permission_classes([IsAdminUser])
-def plans(request):
-    """GET /api/admin/nutrition/plans/?status=to_review|active|all&q="""
-    qs = NutritionPlan.objects.select_related('member', 'nutritionist__user').order_by('reviewed_at', '-created_at')
-    if request.query_params.get('status') != 'pending_payment':
+def filter_plans(qs, params):
+    """?status=to_review|active|paused|completed|archived|pending_payment|all &q= &goal= &nutritionist="""
+    if params.get('status') != 'pending_payment':
         qs = qs.exclude(status='pending_payment')   # unpaid requests aren't the nutritionist's work yet
-    st = request.query_params.get('status', 'active')
+    st = params.get('status', 'active')
     if st == 'to_review':
         qs = qs.filter(status='active', reviewed_at__isnull=True)
     elif st in STATUSES:
         qs = qs.filter(status=st)
-    q = (request.query_params.get('q') or '').strip()
+    if params.get('goal') in GOALS:
+        qs = qs.filter(goal=params['goal'])
+    if str(params.get('nutritionist') or '').isdigit():
+        qs = qs.filter(nutritionist_id=params['nutritionist'])
+    q = (params.get('q') or '').strip()
     if q:
-        qs = qs.filter(Q(member__email__icontains=q) | Q(member__first_name__icontains=q) | Q(member__last_name__icontains=q))
-    return Response([_plan_row(p) for p in qs[:200]])
+        qs = qs.filter(Q(member__email__icontains=q) | Q(member__first_name__icontains=q) | Q(member__last_name__icontains=q)
+                       | Q(name__icontains=q))
+    return qs
+
+
+@api_view(['GET'])
+@permission_classes([IsAdminUser])
+def plans(request):
+    """GET /api/admin/nutrition/plans/?status=to_review|active|all&q=&goal=&nutritionist="""
+    qs = NutritionPlan.objects.select_related('member', 'nutritionist__user').order_by('reviewed_at', '-created_at')
+    return Response([_plan_row(p) for p in filter_plans(qs, request.query_params)[:200]])
 
 
 @api_view(['PATCH'])
@@ -161,32 +173,38 @@ def plans(request):
 def plan_update(request, plan_id):
     """PATCH targets / notes / status — marks the plan reviewed and tells the member."""
     p = get_object_or_404(NutritionPlan.objects.select_related('member', 'nutritionist__user'), id=plan_id)
+    return update_plan(p, request.data)
+
+
+def update_plan(p, data):
+    """Shared with the nutritionist portal: their own clients' plans change straight away."""
+    request_data = data
     errors = {}
     limits = {'target_calories': (800, 8000), 'target_protein_g': (0, 600), 'target_carbs_g': (0, 1200),
               'target_fats_g': (0, 400), 'target_water_ml': (500, 10000), 'cycle_weeks': (1, 52)}
     for f, (lo, hi) in limits.items():
-        if f in request.data:
+        if f in request_data:
             try:
-                v = int(request.data[f])
+                v = int(request_data[f])
                 if not lo <= v <= hi:
                     raise ValueError
                 setattr(p, f, v)
             except (TypeError, ValueError):
                 errors[f] = f'Enter {lo}–{hi}.'
-    if 'goal' in request.data:
-        if request.data['goal'] not in GOALS:
+    if 'goal' in request_data:
+        if request_data['goal'] not in GOALS:
             errors['goal'] = 'Choose a goal.'
         else:
-            p.goal = request.data['goal']
-    if 'status' in request.data:
-        if request.data['status'] not in STATUSES:
+            p.goal = request_data['goal']
+    if 'status' in request_data:
+        if request_data['status'] not in STATUSES:
             errors['status'] = 'Choose a status.'
         else:
-            p.status = request.data['status']
-    if 'notes' in request.data:
-        p.notes = str(request.data.get('notes') or '')[:4000]
-    if 'name' in request.data:
-        p.name = str(request.data.get('name') or '').strip()[:120] or p.name
+            p.status = request_data['status']
+    if 'notes' in request_data:
+        p.notes = str(request_data.get('notes') or '')[:4000]
+    if 'name' in request_data:
+        p.name = str(request_data.get('name') or '').strip()[:120] or p.name
     if errors:
         return Response(errors, status=400)
     first_review = p.reviewed_at is None
@@ -211,9 +229,14 @@ def plan_update(request, plan_id):
 def member_meals(request, member_id):
     """GET /api/admin/nutrition/members/<id>/meals/?days=14 — meals and water per day, newest first."""
     member = get_object_or_404(User, id=member_id)
+    return Response(meal_days(member, request.query_params.get('days', 14)))
+
+
+def meal_days(member, days=14):
+    """Meals and water per day for the last `days` days (1–90), newest first."""
     try:
-        days = min(max(int(request.query_params.get('days', 14)), 1), 90)
-    except ValueError:
+        days = min(max(int(days), 1), 90)
+    except (TypeError, ValueError):
         days = 14
     since = timezone.localdate() - timezone.timedelta(days=days - 1)
     water = {w.date: w.amount_ml for w in WaterIntake.objects.filter(member=member, date__gte=since)}
@@ -232,7 +255,7 @@ def member_meals(request, member_id):
     rows = sorted(out.values(), key=lambda r: r['date'], reverse=True)
     for r in rows:
         r['water_ml'] = water.get(r['date'], 0)
-    return Response(rows)
+    return rows
 
 
 # ============================================================
@@ -251,10 +274,16 @@ def member_scans(request, member_id):
     member = get_object_or_404(User, id=member_id, role='member')
     if request.method == 'GET':
         return Response([_scan_row(s) for s in member.dexa_scans.order_by('-scan_date', '-id')])
+    return add_scan(member, request.data)
+
+
+def add_scan(member, data):
+    """Record a body-scan result for the member and tell them."""
+    request_data = data
     errors, vals = {}, {}
     for f, lo, hi, req in (('weight_kg', 20, 400, True), ('body_fat_percent', 2, 75, True), ('lean_mass_kg', 10, 200, True),
                            ('fat_mass_kg', 1, 250, True), ('visceral_fat_kg', 0, 20, False)):
-        v = request.data.get(f)
+        v = request_data.get(f)
         if v in (None, ''):
             if req:
                 errors[f] = 'Required.'
@@ -269,7 +298,7 @@ def member_scans(request, member_id):
             errors[f] = f'Enter {lo}–{hi}.'
     if errors:
         return Response(errors, status=400)
-    s = DexaScan.objects.create(member=member, notes=str(request.data.get('notes') or '')[:2000], **vals)
+    s = DexaScan.objects.create(member=member, notes=str(request_data.get('notes') or '')[:2000], **vals)
     notify(member, 'nutrition', bi('New body scan result', 'نتيجة فحص جسم جديدة'),
            bi(f'Body fat {s.body_fat_percent}% · lean mass {s.lean_mass_kg} kg.',
               f'نسبة الدهون {s.body_fat_percent}% · الكتلة العضلية {s.lean_mass_kg} كجم.'),

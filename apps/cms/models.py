@@ -1,6 +1,7 @@
 from django.db import models
 from django.conf import settings
 from django.utils.text import slugify
+from apps.core.sides import SideManager, side_field
 
 
 class Article(models.Model):
@@ -14,7 +15,7 @@ class Article(models.Model):
     article_id = models.CharField(max_length=20, unique=True)  # ART-001
     title = models.CharField(max_length=200)
     title_ar = models.CharField(max_length=200, blank=True, db_default='')   # Arabic; empty = show the English
-    slug = models.SlugField(max_length=220, unique=True, blank=True)
+    slug = models.SlugField(max_length=220, blank=True)
     excerpt = models.CharField(max_length=300, blank=True)
     excerpt_ar = models.CharField(max_length=300, blank=True, db_default='')   # Arabic; empty = show the English
     content = models.TextField(blank=True)
@@ -45,7 +46,11 @@ class Article(models.Model):
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
 
+    side = side_field()            # the male or female gym (apps.core.sides)
+    objects = SideManager()
+
     class Meta:
+        constraints = [models.UniqueConstraint(fields=['side', 'slug'], name='uniq_article_slug_per_side')]
         db_table = 'articles'
         ordering = ['-created_at']
 

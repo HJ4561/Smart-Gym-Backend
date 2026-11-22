@@ -1,6 +1,6 @@
 # apps/admin_api/urls.py
 from django.urls import path
-from . import catalog_ops, console, finance, insights, machines_ops, members_ops, nutrition_ops, ops, shop_ops, staff_ops, system_ops, views
+from . import catalog_ops, console, desk_ops, finance, insights, machines_ops, members_ops, nutrition_ops, ops, shop_ops, staff_ops, system_ops, views
 
 app_name = 'admin_api'
 
@@ -10,6 +10,12 @@ urlpatterns = [
     path('missing-arabic/', views.missing_arabic, name='missing-arabic'),
 
     # Members
+    # Front desk
+    path('desk/today/', desk_ops.desk_today, name='desk-today'),
+    path('desk/walk-in/', desk_ops.walk_in, name='desk-walk-in'),
+    path('desk/walk-in/quote/', desk_ops.walk_in_quote, name='desk-walk-in-quote'),
+    path('members/<int:member_id>/verify-identity/', desk_ops.verify_identity, name='member-verify-identity'),
+
     path('members/', members_ops.members_list, name='members-list'),
     path('members/stats/', members_ops.member_stats, name='member-stats'),
     path('members/bulk-action/', members_ops.bulk_member_action, name='member-bulk-action'),
@@ -40,6 +46,7 @@ urlpatterns = [
         # Staff
     path('staff/', staff_ops.staff, name='staff-list'),
     path('staff/stats/', staff_ops.staff_stats, name='staff-stats'),
+    path('staff/modules/', staff_ops.staff_modules, name='staff-modules'),
     path('staff/<int:user_id>/', staff_ops.staff_update, name='staff-update'),
     path('staff/<int:user_id>/send-sign-in/', staff_ops.staff_send_signin, name='staff-send-sign-in'),
     path('staff/<int:user_id>/reset-2fa/', staff_ops.staff_reset_2fa, name='staff-reset-2fa'),
@@ -102,6 +109,7 @@ urlpatterns = [
     path('trainer-hours/<int:trainer_id>/', ops.trainer_hours_update, name='trainer-hours-update'),
     path('trainer-sessions/', ops.trainer_sessions, name='trainer-sessions'),
     path('trainer-sessions/<int:session_id>/status/', ops.trainer_session_status, name='trainer-session-status'),
+    path('trainer-sessions/<int:session_id>/change/', ops.trainer_session_change, name='trainer-session-change'),
 
     # Analytics
     path('analytics/kpis/', insights.kpis, name='analytics-kpis'),

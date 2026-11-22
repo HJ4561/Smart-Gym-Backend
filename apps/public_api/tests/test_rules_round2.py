@@ -244,6 +244,20 @@ class ConsoleRulesTests(Base):
         machine_id = Exercise.objects.get(name='Leg Press').id
         self.assertEqual(self.client.delete(f'/api/admin/machines/{machine_id}/').status_code, 204)
 
+    def test_machine_with_an_old_category_still_saves(self):
+        ex = Exercise.objects.create(name='Lat Pulldown', category='machine', primary_muscle='quads')
+        r = self.client.patch(f'/api/admin/machines/{ex.id}/', {'name': 'Lat Pulldown', 'category': 'machine',
+                                                                'primary_muscle': 'quads', 'setup_instructions': 'Knees under the pad.'},
+                              format='json')
+        self.assertEqual(r.status_code, 200, r.data)
+        ex.refresh_from_db()
+        self.assertEqual(ex.setup_instructions, 'Knees under the pad.')
+        r = self.client.patch(f'/api/admin/machines/{ex.id}/', {'category': 'machines'}, format='json')
+        self.assertIn('Choose a category', r.data['category'])                          # a new value must be a choice
+        r = self.client.patch(f'/api/admin/machines/{ex.id}/', {'category': 'strength', 'primary_muscle': 'back'},
+                              format='json')
+        self.assertEqual((r.status_code, r.data['category'], r.data['primary_muscle']), (200, 'strength', 'back'))
+
     def test_plans_unique_names_and_delete_only_when_unused(self):
         r = self.client.post('/api/admin/site-content/plans/', {'name': 'basic', 'display_name': 'PRO', 'price_monthly': 10,
                                                                 'price_annual': 100}, format='json')
@@ -288,6 +302,10 @@ class ReviewTests(Base):
         self.assertIn('1 to 5', self.client.post(url, {'rating': 9}, format='json').data['rating'])
         self.assertEqual(self.client.post(url, {'rating': 4, 'comment': 'Great'}, format='json').status_code, 201)
         self.assertEqual(self.client.post(url, {'rating': 5, 'comment': 'Even better'}, format='json').status_code, 200)
+        detail = self.client.get(f'/api/catalog/trainers/{self.coach.id}/').data
+        self.assertEqual((detail['total_reviews'], detail['my_review']['status']), (0, 'pending'))   # waits for the admin
+        from apps.approvals.testing import approve_pending
+        approve_pending()
         detail = self.client.get(f'/api/catalog/trainers/{self.coach.id}/').data
         self.assertEqual((detail['total_reviews'], float(detail['rating']), detail['my_review']['comment']), (1, 5.0, 'Even better'))
         self.assertTrue(detail['can_review'])

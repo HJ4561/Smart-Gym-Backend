@@ -288,9 +288,9 @@ class CoachPortalTests(Base):
         self.client.patch(f'/api/admin/courses/{cid}/', {'status': 'published'}, format='json')
         self.assertTrue(Notification.objects.filter(recipient=self.coach_user, title='Your course is live').exists())
         self.as_(self.coach_user)
-        locked = self.client.patch(f'/api/coach/courses/{cid}/', {'price': 1}, format='json')
-        self.assertEqual(locked.status_code, 400)
-        self.assertEqual(self.client.patch(f'/api/coach/courses/{cid}/', {'subtitle': 'Swing well'}, format='json').status_code, 200)
+        waiting = self.client.patch(f'/api/coach/courses/{cid}/', {'price': 1}, format='json')
+        self.assertEqual(waiting.status_code, 202)              # a live course's price change waits for an admin
+        self.assertNotEqual(float(Course.objects.get(pk=cid).price), 1.0)
         other = TrainerProfile.objects.create(user=User.objects.create_user(username='o', email='o@t.local', role='trainer'),
                                               title='Coach')
         foreign = Course.objects.create(trainer=other, title='Other', description='x', category='Strength')
@@ -359,6 +359,8 @@ class VideoTierTests(Base):
                                                         'price': price}, format='json')
             self.assertEqual(r.status_code, 201, r.data)
         self.assertEqual(ExerciseVideo.objects.get(tier='basic').price, 0)        # basic is always free
+        from apps.approvals.testing import approve_pending
+        approve_pending()                          # coach videos reach members once an admin approves them
         self.as_(self.member)
         rows = {v['tier']: v for v in self.client.get(f'/api/workouts/exercises/{self.ex.id}/videos/').data['videos']}
         self.assertEqual((rows['basic']['locked'], rows['advanced']['locked'], rows['premium']['locked']), (False, True, True))

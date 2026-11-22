@@ -5,6 +5,7 @@ from datetime import date
 from decimal import Decimal, ROUND_HALF_UP
 from dateutil.relativedelta import relativedelta
 import uuid
+from apps.core.sides import SideManager, side_field
 
 
 # ============================================================
@@ -13,7 +14,7 @@ import uuid
 class MembershipPlan(models.Model):
     """Available membership tiers. Edited by admin, displayed on public site."""
     # Short unique code ("basic", "pro", "black" were the originals; admins can add more).
-    name = models.CharField(max_length=50, unique=True)
+    name = models.CharField(max_length=50)
     display_name = models.CharField(max_length=100)
     description = models.TextField(blank=True)
     price_monthly = models.DecimalField(max_digits=8, decimal_places=2)
@@ -33,7 +34,11 @@ class MembershipPlan(models.Model):
     is_active = models.BooleanField(default=True)
     created_at = models.DateTimeField(auto_now_add=True)
 
+    side = side_field()            # the male or female gym (apps.core.sides)
+    objects = SideManager()
+
     class Meta:
+        constraints = [models.UniqueConstraint(fields=['side', 'name'], name='uniq_membershipplan_name_per_side')]
         db_table = 'membership_plans'
         ordering = ['price_monthly']
 
@@ -81,8 +86,16 @@ class Membership(models.Model):
     lifetime_value = models.DecimalField(max_digits=10, decimal_places=2, default=0)
     total_check_ins = models.IntegerField(default=0)
 
+    # First visit: the front desk checks the Iqama and photo in person once, before the first check-in.
+    id_verified_at = models.DateTimeField(null=True, blank=True)
+    id_verified_by = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.SET_NULL, null=True, blank=True,
+                                       related_name='+')
+
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
+
+    side = side_field()            # the male or female gym (apps.core.sides)
+    objects = SideManager()
 
     class Meta:
         db_table = 'memberships'
@@ -143,6 +156,11 @@ class Membership(models.Model):
         status_ok = self.status in self.ENTRY_STATUSES or (self.status == 'frozen' and self.is_frozen)
         return status_ok and self.days_remaining > 0
 
+    @property
+    def needs_first_visit_check(self):
+        """True until the desk has checked their ID in person (members who already trained here count as checked)."""
+        return self.id_verified_at is None and not self.total_check_ins
+
 
 # ============================================================
 # CHECK-IN
@@ -171,6 +189,9 @@ class CheckIn(models.Model):
         related_name='verified_check_ins',
     )
     face_verified = models.BooleanField(default=False)
+
+    side = side_field()            # the male or female gym (apps.core.sides)
+    objects = SideManager()
 
     class Meta:
         db_table = 'check_ins'
@@ -212,6 +233,9 @@ class FaceCheck(models.Model):
     )
     source       = models.CharField(max_length=30, default='gate')
     created_at   = models.DateTimeField(auto_now_add=True, db_index=True)
+
+    side = side_field()            # the male or female gym (apps.core.sides)
+    objects = SideManager()
 
     class Meta:
         db_table = 'face_checks'
@@ -316,6 +340,9 @@ class MembershipRegistration(models.Model):
         related_name='source_registration',
     )
 
+    side = side_field()            # the male or female gym (apps.core.sides)
+    objects = SideManager()
+
     class Meta:
         db_table = 'membership_registrations'
         ordering = ['-submitted_at']
@@ -361,6 +388,9 @@ class FacilityAddon(models.Model):
     capacity = models.PositiveIntegerField(default=0)        # people at once; feeds live occupancy
     updated_at = models.DateTimeField(auto_now=True)
 
+    side = side_field()            # the male or female gym (apps.core.sides)
+    objects = SideManager()
+
     class Meta:
         db_table = 'facility_addons'
 
@@ -387,6 +417,9 @@ class MembershipFacility(models.Model):
     source = models.CharField(max_length=10, choices=SOURCE_CHOICES)
     created_at = models.DateTimeField(auto_now_add=True)
 
+    side = side_field()            # the male or female gym (apps.core.sides)
+    objects = SideManager()
+
     class Meta:
         db_table = 'membership_facilities'
         ordering = ['-created_at']
@@ -407,6 +440,9 @@ class Referral(models.Model):
                                         related_name='referral')
     reward = models.DecimalField(max_digits=8, decimal_places=2)
     created_at = models.DateTimeField(auto_now_add=True)
+
+    side = side_field()            # the male or female gym (apps.core.sides)
+    objects = SideManager()
 
     class Meta:
         db_table = 'referrals'

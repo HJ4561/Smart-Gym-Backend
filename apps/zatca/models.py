@@ -9,6 +9,7 @@ ZATCA Phase 2 (e-invoicing) records.
                     tax invoices that ZATCA clears before they are handed over
 """
 from decimal import Decimal
+from apps.core.sides import SideManager, side_field
 
 from django.conf import settings
 from django.db import models
@@ -135,6 +136,9 @@ class BusinessCustomer(models.Model):
 
     FIELDS = ['name', 'vat_number', 'crn', 'street', 'building_number', 'additional_number', 'district', 'city',
               'postal_code']
+
+    side = side_field()            # the male or female gym (apps.core.sides)
+    objects = SideManager()
 
     class Meta:
         db_table = 'zatca_business_customers'

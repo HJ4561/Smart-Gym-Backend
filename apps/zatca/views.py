@@ -271,7 +271,7 @@ def onboard_activate(request, device_id):
 @api_view(['GET'])
 @permission_classes([IsGymAdmin])
 def documents(request):
-    qs = ZatcaDocument.objects.select_related('device', 'original').order_by('-issued_at', '-id')
+    qs = service.for_side(ZatcaDocument.objects.select_related('device', 'original')).order_by('-issued_at', '-id')
     st = request.query_params.get('status')
     if st == 'late':
         qs = qs.filter(status='pending', issued_at__lt=timezone.now() - service.LATE_AFTER)
@@ -296,14 +296,14 @@ def documents(request):
 @api_view(['GET'])
 @permission_classes([IsGymAdmin])
 def document(request, doc_id):
-    doc = get_object_or_404(ZatcaDocument.objects.select_related('device', 'original', 'transaction'), pk=doc_id)
+    doc = get_object_or_404(service.for_side(ZatcaDocument.objects.select_related('device', 'original', 'transaction')), pk=doc_id)
     return Response(_doc_row(doc, full=True))
 
 
 @api_view(['GET'])
 @permission_classes([IsGymAdmin])
 def document_xml(request, doc_id):
-    doc = get_object_or_404(ZatcaDocument, pk=doc_id)
+    doc = get_object_or_404(service.for_side(ZatcaDocument.objects.all()), pk=doc_id)
     cleared = request.query_params.get('copy') == 'cleared' and doc.cleared_xml
     resp = HttpResponse(doc.cleared_xml if cleared else doc.signed_xml, content_type='application/xml; charset=utf-8')
     resp['Content-Disposition'] = f'attachment; filename="{doc.number}{"-cleared" if cleared else ""}.xml"'
@@ -313,7 +313,7 @@ def document_xml(request, doc_id):
 @api_view(['POST'])
 @permission_classes([IsGymAdmin])
 def document_send(request, doc_id):
-    doc = get_object_or_404(ZatcaDocument, pk=doc_id)
+    doc = get_object_or_404(service.for_side(ZatcaDocument.objects.all()), pk=doc_id)
     if doc.status != 'pending':
         return Response({'detail': f'This document is already {doc.get_status_display().lower()}.'}, status=400)
     doc = service.submit(doc.id)
@@ -327,7 +327,7 @@ def document_debit(request, doc_id):
     POST documents/<id>/debit/ {amount, reason, description?, collected_with?: cash | card_terminal}
     A debit note for an undercharge on that invoice (amount = the extra, VAT included).
     """
-    original = get_object_or_404(ZatcaDocument.objects.select_related('transaction__member', 'registration'), pk=doc_id)
+    original = get_object_or_404(service.for_side(ZatcaDocument.objects.select_related('transaction__member', 'registration')), pk=doc_id)
     try:
         doc = service.debit_note(original, request.data.get('amount'), request.data.get('reason'),
                                  description=request.data.get('description', ''),

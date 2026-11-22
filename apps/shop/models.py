@@ -1,5 +1,14 @@
 from django.db import models
 from django.conf import settings
+from apps.core.sides import SideManager, side_field
+
+# Items the shop manager adds wait for an admin before members see them (apps.approvals). Admin-made
+# items and everything that existed before are approved.
+APPROVAL_STATUS = [('pending', 'Waiting for approval'), ('approved', 'Approved'), ('rejected', 'Not approved')]
+
+
+def approval_field():
+    return models.CharField(max_length=10, choices=APPROVAL_STATUS, default='approved', db_default='approved')
 
 
 # ============================================
@@ -7,7 +16,7 @@ from django.conf import settings
 # ============================================
 class ProductCategory(models.Model):
     """Categories: Protein, Pre-Workout, Recovery, Gear, Apparel"""
-    key = models.SlugField(max_length=40, unique=True)
+    key = models.SlugField(max_length=40)
     name = models.CharField(max_length=60)
     name_ar = models.CharField(max_length=60, blank=True, db_default='')   # Arabic; empty = show the English
     icon = models.CharField(max_length=40, blank=True)
@@ -15,8 +24,13 @@ class ProductCategory(models.Model):
     description_ar = models.CharField(max_length=200, blank=True, db_default='')   # Arabic; empty = show the English
     display_order = models.IntegerField(default=0)
     is_active = models.BooleanField(default=True)
+    approval_status = approval_field()
+
+    side = side_field()            # the male or female gym (apps.core.sides)
+    objects = SideManager()
 
     class Meta:
+        constraints = [models.UniqueConstraint(fields=['side', 'key'], name='uniq_productcategory_key_per_side')]
         db_table = 'product_categories'
         ordering = ['display_order', 'name']
 
@@ -34,7 +48,7 @@ class Product(models.Model):
 
     name = models.CharField(max_length=200)
     name_ar = models.CharField(max_length=200, blank=True, db_default='')   # Arabic; empty = show the English
-    sku = models.CharField(max_length=50, unique=True)
+    sku = models.CharField(max_length=50)
     description = models.TextField(blank=True)
     description_ar = models.TextField(blank=True, db_default='')   # Arabic; empty = show the English
 
@@ -70,11 +84,16 @@ class Product(models.Model):
     # Flags
     is_active = models.BooleanField(default=True)
     is_featured = models.BooleanField(default=False)
+    approval_status = approval_field()
 
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
 
+    side = side_field()            # the male or female gym (apps.core.sides)
+    objects = SideManager()
+
     class Meta:
+        constraints = [models.UniqueConstraint(fields=['side', 'sku'], name='uniq_product_sku_per_side')]
         db_table = 'products'
         ordering = ['-is_featured', 'name']
 
@@ -102,6 +121,9 @@ class Cart(models.Model):
     )
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
+
+    side = side_field()            # the male or female gym (apps.core.sides)
+    objects = SideManager()
 
     class Meta:
         db_table = 'carts'
@@ -194,6 +216,9 @@ class Order(models.Model):
 
     notes = models.TextField(blank=True)
 
+    side = side_field()            # the male or female gym (apps.core.sides)
+    objects = SideManager()
+
     class Meta:
         db_table = 'orders'
         ordering = ['-created_at']
@@ -236,7 +261,7 @@ class OrderItem(models.Model):
 # ============================================
 class PromoCode(models.Model):
     """Discount codes like PRO15."""
-    code = models.CharField(max_length=40, unique=True)
+    code = models.CharField(max_length=40)
     description = models.CharField(max_length=200, blank=True)
 
     # Discount
@@ -248,8 +273,13 @@ class PromoCode(models.Model):
     valid_from = models.DateTimeField(null=True, blank=True)
     valid_until = models.DateTimeField(null=True, blank=True)
     is_active = models.BooleanField(default=True)
+    approval_status = approval_field()
+
+    side = side_field()            # the male or female gym (apps.core.sides)
+    objects = SideManager()
 
     class Meta:
+        constraints = [models.UniqueConstraint(fields=['side', 'code'], name='uniq_promocode_code_per_side')]
         db_table = 'promo_codes'
 
     def __str__(self):
@@ -259,7 +289,7 @@ class PromoCode(models.Model):
     def is_valid(self):
         from django.utils import timezone
         now = timezone.now()
-        if not self.is_active:
+        if not self.is_active or self.approval_status != 'approved':
             return False
         if self.valid_from and now < self.valid_from:
             return False

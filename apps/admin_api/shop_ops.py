@@ -1,6 +1,14 @@
 """
-Admin → Shop: products (price, stock, photo, category, on sale or not), categories and promo
-codes. Members see active products in active categories; checkout takes stock off.
+Admin → Shop and the shop manager's portal: products (price, stock, photo, category, on sale or not),
+categories and promo codes. Members see active, approved products in active, approved categories;
+checkout takes stock off.
+
+The shop manager's catalog work goes to an admin first (apps.approvals):
+  new product / category / promo code   saved hidden, live once approved
+  change to a live one                  members keep the current version until the change is approved
+  remove a live one                     waits for approval
+  stock counts                          change straight away (day-to-day work, like orders)
+Admins' own changes apply straight away.
 """
 import re
 from decimal import Decimal, InvalidOperation
@@ -18,8 +26,10 @@ from apps.core.i18n import read_ar, read_ar_list, with_ar
 from apps.core.validators import duplicate_error
 from apps.shop.models import Order, OrderItem, Product, ProductCategory, PromoCode
 
+from apps.approvals.registry import pending_for, submit_create, submit_delete, submit_update
+from apps.core.roles import IsShopStaff, needs_approval
+
 from .catalog_ops import _save_image
-from .permissions import IsAdminUser
 
 
 def _f(v):
@@ -54,6 +64,88 @@ def _int(data, field, errors, lo, hi):
 
 
 # ============================================================
+# Approval plumbing shared by products, categories and promo codes
+# ============================================================
+# Day-to-day stock work changes at once; everything members see waits for an admin.
+DIRECT = {'shop.product': {'stock_quantity', 'low_stock_threshold', 'stock_label', 'stock_label_ar'}}
+SENT = 'Sent to an admin for approval. Members keep seeing the current version until then.'
+
+
+def _with_pending(rows, key):
+    """Each row gets `pending`: the requests still waiting for an admin (new / change / remove)."""
+    from apps.approvals.models import ChangeRequest
+    waiting = {}
+    for cr in (ChangeRequest.objects.filter(target_type=key, object_id__in=[r['id'] for r in rows], status='pending')
+               .order_by('created_at')):
+        waiting.setdefault(cr.object_id, []).append(
+            {'id': cr.id, 'kind': cr.kind, 'payload': cr.payload, 'created_at': cr.created_at})
+    for r in rows:
+        r['pending'] = waiting.get(r['id'], [])
+    return rows
+
+
+def _create(request, key, obj):
+    """A new item: live at once for an admin; hidden until approved for the shop manager."""
+    if needs_approval(request.user):
+        obj.approval_status = 'pending'
+        obj.save()
+        submit_create(request.user, key, obj)
+    else:
+        obj.save()
+
+
+def _change(request, key, obj, data, apply, row):
+    """PATCH for every shop item. `apply(obj, data, errors)` validates and copies; `row(obj)` is the reply."""
+    errors = {}
+    if not needs_approval(request.user):
+        apply(obj, data, errors)
+        if errors:
+            return Response(errors, status=400)
+        obj.save()
+        return Response(_with_pending([row(obj)], key)[0])
+    user = request.user
+    if obj.approval_status != 'approved':
+        # Not live yet: their own item, edited freely. A rejected one goes back in the queue.
+        apply(obj, data, errors)
+        if errors:
+            return Response(errors, status=400)
+        obj.approval_status = 'pending'
+        obj.save()
+        if not pending_for(key, obj.pk).filter(kind='create').exists():
+            submit_create(user, key, obj)
+        return Response({**_with_pending([row(obj)], key)[0],
+                         'detail': 'Saved — it goes live once an admin approves it.'})
+    direct = {k: v for k, v in data.items() if k in DIRECT.get(key, ())}
+    rest = {k: v for k, v in data.items() if k not in direct}
+    if direct:
+        apply(obj, direct, errors)
+        if errors:
+            return Response(errors, status=400)
+        obj.save()
+    cr = None
+    if rest:
+        cr, errors = submit_update(user, key, obj, rest)
+        if errors:
+            return Response(errors, status=400)
+    body = _with_pending([row(obj)], key)[0]
+    if cr is not None:
+        return Response({**body, 'detail': SENT}, status=202)
+    return Response(body)
+
+
+def _remove(request, key, obj, delete):
+    """DELETE: an admin (or the shop manager, for an item that isn't live yet) at once; a live one waits."""
+    pk = obj.pk
+    if needs_approval(request.user) and obj.approval_status == 'approved':
+        submit_delete(request.user, key, obj)
+        return Response({'detail': 'Removal sent to an admin for approval.'}, status=202)
+    response = delete()
+    if response.status_code == 204:
+        pending_for(key, pk).update(status='withdrawn')
+    return response
+
+
+# ============================================================
 # PRODUCTS
 # ============================================================
 def _product_row(p):
@@ -67,6 +159,7 @@ def _product_row(p):
         'low_stock_threshold': p.low_stock_threshold, 'is_low_stock': p.is_low_stock,
         'is_active': p.is_active, 'is_featured': p.is_featured, 'total_sold': p.total_sold,
         'rating': _f(p.rating), 'total_reviews': p.total_reviews, 'updated_at': p.updated_at,
+        'approval_status': p.approval_status,
     }
 
 
@@ -164,10 +257,16 @@ def _apply_product(p, data, errors):
     for flag in ('is_active', 'is_featured'):
         if flag in data:
             setattr(p, flag, bool(data.get(flag)))
+    if 'image_url' in data:   # a new photo waiting for approval (uploaded through product_image)
+        url = str(data.get('image_url') or '')
+        if len(url) > 500 or (url and not url.startswith(('/', 'http://', 'https://'))):
+            errors['image_url'] = 'Upload the photo again.'
+        else:
+            p.image_url = url
 
 
 @api_view(['GET', 'POST'])
-@permission_classes([IsAdminUser])
+@permission_classes([IsShopStaff])
 @parser_classes([JSONParser])
 def products(request):
     """GET /api/admin/shop/products/?q=&category=&status=active|hidden|low|out · POST {name, sku, category_id, price, …}"""
@@ -185,22 +284,24 @@ def products(request):
             qs = qs.filter(is_active=False)
         elif st == 'out':
             qs = qs.filter(stock_quantity__lte=0)
+        elif st == 'waiting':
+            qs = qs.exclude(approval_status='approved')
         rows = [_product_row(p) for p in qs]
         if st == 'low':
             rows = [r for r in rows if r['is_low_stock'] and r['stock_quantity'] > 0]
-        return Response(rows)
+        return Response(_with_pending(rows, 'shop.product'))
     p = Product(stock_quantity=0)
     errors = {}
     data = {'name': '', 'price': None, 'category_id': None, **request.data}
     _apply_product(p, data, errors)
     if errors:
         return Response(errors, status=400)
-    p.save()
-    return Response(_product_row(p), status=201)
+    _create(request, 'shop.product', p)
+    return Response(_with_pending([_product_row(p)], 'shop.product')[0], status=201)
 
 
 @api_view(['GET'])
-@permission_classes([IsAdminUser])
+@permission_classes([IsShopStaff])
 def product_next_sku(request):
     """GET /api/admin/shop/products/next-sku/?category_id=&product_id= → {prefix, sku} for the product form."""
     c = get_object_or_404(ProductCategory, id=request.query_params.get('category_id'))
@@ -209,26 +310,25 @@ def product_next_sku(request):
 
 
 @api_view(['PATCH', 'DELETE'])
-@permission_classes([IsAdminUser])
+@permission_classes([IsShopStaff])
 @parser_classes([JSONParser])
 def product_detail(request, product_id):
     """PATCH any field · DELETE only if it was never ordered (hide it otherwise)."""
     p = get_object_or_404(Product.objects.select_related('category'), id=product_id)
     if request.method == 'DELETE':
+        def delete():
+            if OrderItem.objects.filter(product=p).exists():
+                return Response({'detail': 'This product has been ordered before — hide it instead.'}, status=400)
+            p.delete()
+            return Response(status=204)
         if OrderItem.objects.filter(product=p).exists():
-            return Response({'detail': 'This product has been ordered before — hide it instead.'}, status=400)
-        p.delete()
-        return Response(status=204)
-    errors = {}
-    _apply_product(p, request.data, errors)
-    if errors:
-        return Response(errors, status=400)
-    p.save()
-    return Response(_product_row(p))
+            return delete()
+        return _remove(request, 'shop.product', p, delete)
+    return _change(request, 'shop.product', p, request.data, _apply_product, _product_row)
 
 
 @api_view(['POST'])
-@permission_classes([IsAdminUser])
+@permission_classes([IsShopStaff])
 @parser_classes([MultiPartParser, FormParser])
 def product_image(request, product_id):
     """POST /api/admin/shop/products/<id>/image/ multipart {image}"""
@@ -236,20 +336,25 @@ def product_image(request, product_id):
     url, err = _save_image(request, 'shop')
     if err:
         return Response({'image': [err]}, status=400)
+    if needs_approval(request.user) and p.approval_status == 'approved':
+        return _change(request, 'shop.product', p, {'image_url': url}, _apply_product, _product_row)
     p.image_url = url
     p.save(update_fields=['image_url', 'updated_at'])
-    return Response(_product_row(p))
+    return Response(_with_pending([_product_row(p)], 'shop.product')[0])
 
 
 @api_view(['GET'])
-@permission_classes([IsAdminUser])
+@permission_classes([IsShopStaff])
 def shop_stats(request):
     from apps.shop.services import expire_stale_orders
     expire_stale_orders()
     since = timezone.now() - timezone.timedelta(days=30)
     active = Product.objects.filter(is_active=True)
     paid = Order.objects.filter(created_at__gte=since).exclude(status__in=['pending', 'cancelled', 'refunded'])
+    from apps.approvals.models import ChangeRequest
     return Response({
+        'waiting_approval': ChangeRequest.objects.filter(target_type__startswith='shop.', status='pending').count(),
+        'orders_to_prepare': Order.objects.filter(status__in=['paid', 'preparing']).count(),
         'products': active.count(),
         'hidden': Product.objects.filter(is_active=False).count(),
         'out_of_stock': active.filter(stock_quantity__lte=0).count(),
@@ -264,15 +369,36 @@ def shop_stats(request):
 # ============================================================
 def _cat_row(c):
     return {'id': c.id, 'key': c.key, 'name': c.name, 'name_ar': c.name_ar, 'icon': c.icon, 'description': c.description,
-            'description_ar': c.description_ar,
-            'display_order': c.display_order, 'is_active': c.is_active, 'products': c.products.count()}
+            'description_ar': c.description_ar, 'approval_status': c.approval_status,
+            'display_order': c.display_order, 'is_active': c.is_active, 'products': c.products.count() if c.pk else 0}
+
+
+def _apply_category(c, data, errors):
+    for f, n in (('name', 60), ('name_ar', 60), ('icon', 40), ('description', 200), ('description_ar', 200)):
+        if f in data:
+            setattr(c, f, ' '.join(str(data.get(f) or '').split())[:n])
+    if 'name' in data:
+        if not c.name:
+            errors['name'] = 'Category name is required.'
+        else:
+            dup = duplicate_error(ProductCategory.objects.all(), 'name', c.name, 'A category named', exclude_id=c.id)
+            if dup:
+                errors['name'] = dup
+    if 'display_order' in data:
+        try:
+            c.display_order = int(data['display_order'])
+        except (TypeError, ValueError):
+            errors['display_order'] = 'Enter a number.'
+    if 'is_active' in data:
+        c.is_active = bool(data['is_active'])
 
 
 @api_view(['GET', 'POST'])
-@permission_classes([IsAdminUser])
+@permission_classes([IsShopStaff])
 def categories(request):
     if request.method == 'GET':
-        return Response([_cat_row(c) for c in ProductCategory.objects.order_by('display_order', 'name')])
+        return Response(_with_pending([_cat_row(c) for c in ProductCategory.objects.order_by('display_order', 'name')],
+                                      'shop.category'))
     name = ' '.join(str(request.data.get('name') or '').split())
     if not name:
         return Response({'name': 'Category name is required.'}, status=400)
@@ -286,42 +412,29 @@ def categories(request):
     while ProductCategory.objects.filter(key=key).exists():
         n += 1
         key = f'{base}-{n}'
-    c = ProductCategory.objects.create(
+    c = ProductCategory(
         key=key, name=name, name_ar=' '.join(str(request.data.get('name_ar') or '').split())[:60],
         icon=str(request.data.get('icon') or 'category')[:40],
         description=str(request.data.get('description') or '')[:200],
         description_ar=str(request.data.get('description_ar') or '')[:200],
         display_order=ProductCategory.objects.count())
-    return Response(_cat_row(c), status=201)
+    _create(request, 'shop.category', c)
+    return Response(_with_pending([_cat_row(c)], 'shop.category')[0], status=201)
 
 
 @api_view(['PATCH', 'DELETE'])
-@permission_classes([IsAdminUser])
+@permission_classes([IsShopStaff])
 def category_detail(request, category_id):
     c = get_object_or_404(ProductCategory, id=category_id)
     if request.method == 'DELETE':
-        try:
-            c.delete()
-        except ProtectedError:
-            return Response({'detail': 'Move or delete its products first, or hide the category.'}, status=400)
-        return Response(status=204)
-    for f, n in (('name', 60), ('name_ar', 60), ('icon', 40), ('description', 200), ('description_ar', 200)):
-        if f in request.data:
-            setattr(c, f, ' '.join(str(request.data.get(f) or '').split())[:n])
-    if not c.name:
-        return Response({'name': 'Category name is required.'}, status=400)
-    dup = duplicate_error(ProductCategory.objects.all(), 'name', c.name, 'A category named', exclude_id=c.id)
-    if dup:
-        return Response({'name': dup}, status=400)
-    if 'display_order' in request.data:
-        try:
-            c.display_order = int(request.data['display_order'])
-        except (TypeError, ValueError):
-            return Response({'display_order': 'Enter a number.'}, status=400)
-    if 'is_active' in request.data:
-        c.is_active = bool(request.data['is_active'])
-    c.save()
-    return Response(_cat_row(c))
+        def delete():
+            try:
+                c.delete()
+            except ProtectedError:
+                return Response({'detail': 'Move or delete its products first, or hide the category.'}, status=400)
+            return Response(status=204)
+        return _remove(request, 'shop.category', c, delete)
+    return _change(request, 'shop.category', c, request.data, _apply_category, _cat_row)
 
 
 # ============================================================
@@ -330,7 +443,8 @@ def category_detail(request, category_id):
 def _promo_row(p):
     return {'id': p.id, 'code': p.code, 'description': p.description, 'discount_percent': _f(p.discount_percent),
             'max_uses': p.max_uses, 'used_count': p.used_count, 'valid_from': p.valid_from,
-            'valid_until': p.valid_until, 'is_active': p.is_active, 'is_valid': p.is_valid}
+            'valid_until': p.valid_until, 'is_active': p.is_active, 'is_valid': p.is_valid,
+            'approval_status': p.approval_status}
 
 
 def _apply_promo(p, data, errors):
@@ -380,31 +494,33 @@ def _apply_promo(p, data, errors):
 
 
 @api_view(['GET', 'POST'])
-@permission_classes([IsAdminUser])
+@permission_classes([IsShopStaff])
 def promos(request):
     if request.method == 'GET':
-        return Response([_promo_row(p) for p in PromoCode.objects.order_by('-is_active', 'code')])
+        qs = PromoCode.objects.order_by('-is_active', 'code')
+        if q := (request.query_params.get('q') or '').strip():
+            qs = qs.filter(Q(code__icontains=q) | Q(description__icontains=q))
+        return Response(_with_pending([_promo_row(p) for p in qs], 'shop.promo'))
     p = PromoCode()
     errors = {}
     _apply_promo(p, {'code': '', 'discount_percent': None, **request.data}, errors)
     if errors:
         return Response(errors, status=400)
-    p.save()
-    return Response(_promo_row(p), status=201)
+    _create(request, 'shop.promo', p)
+    return Response(_with_pending([_promo_row(p)], 'shop.promo')[0], status=201)
 
 
 @api_view(['PATCH', 'DELETE'])
-@permission_classes([IsAdminUser])
+@permission_classes([IsShopStaff])
 def promo_detail(request, promo_id):
     p = get_object_or_404(PromoCode, id=promo_id)
     if request.method == 'DELETE':
+        def delete():
+            if p.used_count:
+                return Response({'detail': 'This code has been used — switch it off instead.'}, status=400)
+            p.delete()
+            return Response(status=204)
         if p.used_count:
-            return Response({'detail': 'This code has been used — switch it off instead.'}, status=400)
-        p.delete()
-        return Response(status=204)
-    errors = {}
-    _apply_promo(p, request.data, errors)
-    if errors:
-        return Response(errors, status=400)
-    p.save()
-    return Response(_promo_row(p))
+            return delete()
+        return _remove(request, 'shop.promo', p, delete)
+    return _change(request, 'shop.promo', p, request.data, _apply_promo, _promo_row)

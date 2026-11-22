@@ -49,13 +49,27 @@ def plans_including(tier):
     return list(MembershipPlan.objects.filter(is_active=True, video_access__in=ok).values_list('display_name', flat=True))
 
 
+def youtube_id(url):
+    import re
+    m = re.search(r'(?:youtube\.com/(?:watch\?v=|embed/|shorts/)|youtu\.be/)([A-Za-z0-9_-]{11})', url or '')
+    return m.group(1) if m else None
+
+
+def thumbnail(v):
+    """The uploaded still, else YouTube's own, else none (the player shows the first frame)."""
+    if v.thumbnail_url:
+        return v.thumbnail_url
+    yid = youtube_id(v.video_url)
+    return f'https://img.youtube.com/vi/{yid}/hqdefault.jpg' if yid else None
+
+
 def member_row(v, can, why, included_in):
     coach = v.coach.user.full_name if v.coach_id else 'Smart Gym'
     return {
         'id': v.id, 'tier': v.tier, 'tier_label': TIERS[v.tier], 'title': v.title, 'description': v.description,
         **with_ar(v, 'title', 'description'),
         'duration_minutes': v.duration_minutes, 'price': str(v.price), 'coach': coach,
-        'locked': not can, 'access': why,
+        'thumbnail_url': thumbnail(v), 'locked': not can, 'access': why,
         'video_url': v.video_url if can else None,          # never sent while locked
         'included_in': included_in if v.tier != 'basic' else [],
     }
@@ -69,7 +83,8 @@ def coach_row(v):
         'tier': v.tier, 'tier_label': TIERS[v.tier], 'title': v.title, 'description': v.description,
         **with_ar(v, 'title', 'description'),
         'video_url': v.video_url, 'duration_minutes': v.duration_minutes, 'price': str(v.price),
-        'is_active': v.is_active, 'coach_id': v.coach_id,
+        'is_active': v.is_active, 'coach_id': v.coach_id, 'thumbnail_url': thumbnail(v),
+        'own_thumbnail': v.thumbnail_url, 'approval_status': v.approval_status,
         'coach': v.coach.user.full_name if v.coach_id else 'Smart Gym',
         'purchases': agg if agg is not None else v.purchases.count(),
         'revenue': str(getattr(v, 'revenue', None) or v.purchases.aggregate(t=Sum('amount'))['t'] or 0),
@@ -114,6 +129,12 @@ def apply(v, data, errors):
             errors['price'] = 'Enter a price in SAR.'
     if 'is_active' in data:
         v.is_active = bool(data.get('is_active'))
+    if 'thumbnail_url' in data:
+        url = str(data.get('thumbnail_url') or '')
+        if len(url) > 500 or (url and not url.startswith(('/', 'http://', 'https://'))):
+            errors['thumbnail_url'] = 'Upload the photo again.'
+        else:
+            v.thumbnail_url = url
     if 'price' not in errors:
         if v.tier == 'basic':
             v.price = Decimal('0')                      # basic videos are always free

@@ -1,5 +1,6 @@
 from django.db import models
 from django.conf import settings
+from apps.core.sides import SideManager, side_field
 
 
 class Exercise(models.Model):
@@ -44,7 +45,7 @@ class Exercise(models.Model):
     cadence = models.CharField(max_length=60, blank=True, default='3-0-1-0')
 
 
-    name = models.CharField(max_length=100, unique=True)
+    name = models.CharField(max_length=100)
     name_ar = models.CharField(max_length=100, blank=True, db_default='')   # Arabic; empty = show the English
     category = models.CharField(max_length=20, choices=CATEGORY_CHOICES)
     primary_muscle = models.CharField(max_length=20, choices=MUSCLE_CHOICES)
@@ -66,7 +67,11 @@ class Exercise(models.Model):
     is_active = models.BooleanField(default=True)
     created_at = models.DateTimeField(auto_now_add=True)
 
+    side = side_field()            # the male or female gym (apps.core.sides)
+    objects = SideManager()
+
     class Meta:
+        constraints = [models.UniqueConstraint(fields=['side', 'name'], name='uniq_exercise_name_per_side')]
         db_table = 'exercises'
         ordering = ['category', 'name']
 
@@ -99,8 +104,16 @@ class ExerciseVideo(models.Model):
     duration_minutes = models.PositiveIntegerField(default=5)
     price = models.DecimalField(max_digits=8, decimal_places=2, default=0)   # 0 for basic videos
     is_active = models.BooleanField(default=True)
+    thumbnail_url = models.CharField(max_length=500, blank=True, db_default='')   # empty: YouTube's own still
+    # A coach's new video waits for an admin (apps.approvals); the gym's own and older videos are approved.
+    approval_status = models.CharField(max_length=10, default='approved', db_default='approved',
+                                       choices=[('pending', 'Waiting for approval'), ('approved', 'Approved'),
+                                                ('rejected', 'Not approved')])
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
+
+    side = side_field()            # the male or female gym (apps.core.sides)
+    objects = SideManager()
 
     class Meta:
         db_table = 'exercise_videos'
@@ -116,6 +129,9 @@ class VideoPurchase(models.Model):
     video = models.ForeignKey(ExerciseVideo, on_delete=models.PROTECT, related_name='purchases')
     amount = models.DecimalField(max_digits=8, decimal_places=2)
     created_at = models.DateTimeField(auto_now_add=True)
+
+    side = side_field()            # the male or female gym (apps.core.sides)
+    objects = SideManager()
 
     class Meta:
         db_table = 'video_purchases'
@@ -154,6 +170,9 @@ class Workout(models.Model):
     # Metadata
     notes = models.TextField(blank=True)
     rpe_avg = models.DecimalField(max_digits=4, decimal_places=1, null=True, blank=True)
+
+    side = side_field()            # the male or female gym (apps.core.sides)
+    objects = SideManager()
 
     class Meta:
         db_table = 'workouts'
@@ -235,6 +254,9 @@ class PersonalRecord(models.Model):
 
     achieved_at = models.DateTimeField(auto_now=True)
 
+    side = side_field()            # the male or female gym (apps.core.sides)
+    objects = SideManager()
+
     class Meta:
         db_table = 'personal_records'
         unique_together = ['member', 'exercise']
@@ -259,6 +281,9 @@ class WorkoutTemplate(models.Model):
     is_active = models.BooleanField(default=True)
 
     created_at = models.DateTimeField(auto_now_add=True)
+
+    side = side_field()            # the male or female gym (apps.core.sides)
+    objects = SideManager()
 
     class Meta:
         db_table = 'workout_templates'

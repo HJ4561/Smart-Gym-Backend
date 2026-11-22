@@ -104,7 +104,7 @@ class RegistrationCreateSerializer(serializers.ModelSerializer):
         if msg:
             raise serializers.ValidationError(msg)
         # An account that isn't from a pending signup (staff, trainer, existing member) owns this email.
-        if User.objects.filter(email__iexact=value).exists():
+        if User._base_manager.filter(email__iexact=value).exists():     # either gym
             raise serializers.ValidationError('This email already has a Smart Gym account. Sign in to the member portal instead.')
         return value
 
@@ -140,8 +140,9 @@ class RegistrationCreateSerializer(serializers.ModelSerializer):
         except FacilityError as exc:
             raise serializers.ValidationError({'facilities': str(exc)})
 
-        by_iqama = MembershipRegistration.objects.filter(iqama_number=attrs['iqama_number']).first()
-        by_email = MembershipRegistration.objects.filter(email__iexact=attrs['email']).first()
+        # Iqama and email are unique across both gyms (a signup at the other gym blocks them too).
+        by_iqama = MembershipRegistration._base_manager.filter(iqama_number=attrs['iqama_number']).first()
+        by_email = MembershipRegistration._base_manager.filter(email__iexact=attrs['email']).first()
         existing = by_iqama or by_email
         # The same person under a new email: a live signup already uses this full name.
         same_name = (MembershipRegistration.objects.filter(full_name__iexact=attrs['full_name'])

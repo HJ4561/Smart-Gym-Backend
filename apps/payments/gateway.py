@@ -176,7 +176,8 @@ def _build_facility(member, data):
 def _build_video(member, data):
     from apps.workouts import videos
     from apps.workouts.models import ExerciseVideo
-    video = ExerciseVideo.objects.select_related('exercise').filter(id=data.get('video_id'), is_active=True).first()
+    video = (ExerciseVideo.objects.select_related('exercise')
+             .filter(id=data.get('video_id'), is_active=True, approval_status='approved').first())
     if video is None:
         raise PaymentError('Video not found.')
     can, why = videos.access(member, video)

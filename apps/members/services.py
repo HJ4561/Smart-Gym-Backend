@@ -36,7 +36,7 @@ def compute_expiry(start: date, months: int) -> date:
 # APPROVE ONE REGISTRATION
 # ============================================================
 @transaction.atomic
-def approve_registration(reg: MembershipRegistration, approved_by=None):
+def approve_registration(reg: MembershipRegistration, approved_by=None, paid_at_desk=False):
     """
     Approve a single registration:
       1. Create a User account (role='member')
@@ -46,6 +46,9 @@ def approve_registration(reg: MembershipRegistration, approved_by=None):
     Returns the created User.
 
     Raises ValueError if the registration can't be approved.
+
+    paid_at_desk: a walk-in who paid cash or by card terminal at the front desk (apps.admin_api.desk_ops) —
+    there's no Moyasar payment to re-check, and the receipt and tax invoice are issued now.
     """
     if reg.status == MembershipRegistration.STATUS_APPROVED:
         raise ValueError('Registration is already approved.')
@@ -60,14 +63,15 @@ def approve_registration(reg: MembershipRegistration, approved_by=None):
         raise ValueError('Registration has not been paid — cannot approve.')
 
     # Live re-check with Moyasar — payment_status alone isn't proof (refunds, manual edits).
-    from apps.public_api.moyasar import confirm_paid_for_approval, MoyasarError
-    try:
-        confirm_paid_for_approval(reg)
-    except MoyasarError as exc:
-        raise ValueError(str(exc)) from exc
+    if not paid_at_desk:
+        from apps.public_api.moyasar import confirm_paid_for_approval, MoyasarError
+        try:
+            confirm_paid_for_approval(reg)
+        except MoyasarError as exc:
+            raise ValueError(str(exc)) from exc
 
     # 1. Guard against email / iqama collisions (defensive — unique fields should prevent)
-    if User.objects.filter(email=reg.email).exists():
+    if User._base_manager.filter(email=reg.email).exists():      # either gym
         raise ValueError(f'A user with email {reg.email} already exists.')
 
     # 2. Create the User
@@ -116,7 +120,7 @@ def approve_registration(reg: MembershipRegistration, approved_by=None):
               Decimal(line['amount']), start, ends, 'signup')
 
     # 4. The signup payment appears in the member's Payments page.
-    record_signup_payment(reg, user)
+    record_signup_payment(reg, user, paid_at_desk=paid_at_desk)
 
     # 5. Link back
     reg.created_user = user
@@ -148,8 +152,9 @@ def approve_registration(reg: MembershipRegistration, approved_by=None):
     return user
 
 
-def record_signup_payment(reg, user):
-    """Ledger entry (Transaction + paid Invoice) for the Moyasar payment made at signup."""
+def record_signup_payment(reg, user, paid_at_desk=False):
+    """Ledger entry (Transaction + paid Invoice) for the Moyasar payment made at signup — or, for a walk-in
+    who paid at the desk, the payment itself with its emailed receipt and ZATCA invoice."""
     from apps.payments.gateway import record_transaction
     from apps.payments.models import Transaction
     ref = reg.moyasar_payment_id or reg.payment_reference
@@ -159,13 +164,16 @@ def record_signup_payment(reg, user):
         user, f'Membership — {reg.plan.display_name} ({reg.duration_months} mo)'
               + (f' + {len(reg.facilities)} facilit{"y" if len(reg.facilities) == 1 else "ies"}' if reg.facilities else ''),
         'subscription',
-        reg.payment_amount or reg.total_price, (reg.payment_method or 'card').upper(), ref,
+        reg.payment_amount or reg.total_price,
+        ({'cash': 'Cash at desk', 'card_terminal': 'Card terminal at desk'}.get(reg.payment_method, 'Desk')
+         if paid_at_desk else (reg.payment_method or 'card').upper()), ref,
         when=reg.payment_paid_at or timezone.now(),
-        email=False,     # the receipt was emailed when the signup payment went through
-        invoice=False,   # ...and its ZATCA invoice was issued then too
+        email=paid_at_desk,     # online: the receipt was emailed when the signup payment went through
+        invoice=paid_at_desk,   # ...and its ZATCA invoice was issued then too
     )
-    from apps.zatca import service as zatca
-    zatca.after_commit(zatca.link_signup_transaction, reg, txn)
+    if not paid_at_desk:
+        from apps.zatca import service as zatca
+        zatca.after_commit(zatca.link_signup_transaction, reg, txn)
     return txn
 
 
@@ -268,6 +276,10 @@ def member_portal_url():
     production ("http://localhost:5173,https://gym-member-and-admin.vercel.app"),
     so prefer its first https entry; locally that is the localhost one.
     """
+    from apps.core.sides import portal_url_for
+    female = portal_url_for()          # female members and staff get the female gym's website
+    if female:
+        return female
     urls = [u.strip().rstrip('/') for u in settings.FRONTEND_URL.split(',') if u.strip()]
     https = [u for u in urls if u.startswith('https://')]
     return (https or urls or [DEFAULT_MEMBER_PORTAL])[0]

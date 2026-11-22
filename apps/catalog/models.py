@@ -1,5 +1,6 @@
 from django.db import models
 from django.conf import settings
+from apps.core.sides import SideManager, side_field
 
 
 # ============================================
@@ -43,6 +44,9 @@ class TrainerProfile(models.Model):
 
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
+
+    side = side_field()            # the male or female gym (apps.core.sides)
+    objects = SideManager()
 
     class Meta:
         db_table = 'trainer_profiles'
@@ -136,6 +140,9 @@ class Course(models.Model):
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
 
+    side = side_field()            # the male or female gym (apps.core.sides)
+    objects = SideManager()
+
     class Meta:
         db_table = 'courses'
         ordering = ['-is_featured', '-created_at']
@@ -209,6 +216,9 @@ class Enrollment(models.Model):
     amount_paid = models.DecimalField(max_digits=8, decimal_places=2, default=0)
     payment_ref = models.CharField(max_length=80, blank=True)
 
+    side = side_field()            # the male or female gym (apps.core.sides)
+    objects = SideManager()
+
     class Meta:
         db_table = 'enrollments'
         unique_together = ['member', 'course']
@@ -253,7 +263,14 @@ class TrainerSession(models.Model):
     # Pricing
     amount_charged = models.DecimalField(max_digits=8, decimal_places=2, default=0)
 
+    # Moved or delayed by the coach / gym: the time it had before, and why (shown to the member).
+    rescheduled_from = models.DateTimeField(null=True, blank=True)
+    change_note = models.CharField(max_length=300, blank=True, db_default='')
+
     created_at = models.DateTimeField(auto_now_add=True)
+
+    side = side_field()            # the male or female gym (apps.core.sides)
+    objects = SideManager()
 
     class Meta:
         db_table = 'trainer_sessions'
@@ -266,6 +283,9 @@ class TrainerSession(models.Model):
 # ============================================
 # REVIEWS
 # ============================================
+REVIEW_STATUS = [('pending', 'Waiting for approval'), ('approved', 'Approved'), ('rejected', 'Rejected')]
+
+
 class CourseReview(models.Model):
     course = models.ForeignKey(
         Course,
@@ -278,7 +298,12 @@ class CourseReview(models.Model):
     )
     rating = models.IntegerField()  # 1-5
     comment = models.TextField(blank=True)
+    # Members see a review (and it counts in the rating) only after an admin approves it.
+    status = models.CharField(max_length=10, choices=REVIEW_STATUS, default='pending', db_default='approved')
     created_at = models.DateTimeField(auto_now_add=True)
+
+    side = side_field()            # the male or female gym (apps.core.sides)
+    objects = SideManager()
 
     class Meta:
         db_table = 'course_reviews'
@@ -301,7 +326,12 @@ class TrainerReview(models.Model):
     )
     rating = models.IntegerField()  # 1-5
     comment = models.TextField(blank=True)
+    # Members see a review (and it counts in the rating) only after an admin approves it.
+    status = models.CharField(max_length=10, choices=REVIEW_STATUS, default='pending', db_default='approved')
     created_at = models.DateTimeField(auto_now_add=True)
+
+    side = side_field()            # the male or female gym (apps.core.sides)
+    objects = SideManager()
 
     class Meta:
         db_table = 'trainer_reviews'

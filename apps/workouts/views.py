@@ -472,7 +472,7 @@ def exercise_videos(request, exercise_id):
         rows.append({'id': None, 'tier': 'basic', 'tier_label': vids.TIERS['basic'], 'title': 'Machine walkthrough',
                      'description': '', 'duration_minutes': None, 'price': '0', 'coach': 'Smart Gym',
                      'locked': False, 'access': 'free', 'video_url': ex.video_url, 'included_in': []})
-    for v in ex.videos.filter(is_active=True).select_related('coach__user').order_by('created_at'):
+    for v in ex.videos.filter(is_active=True, approval_status='approved').select_related('coach__user').order_by('created_at'):
         can, why = vids.access(request.user, v, level, bought)
         rows.append(vids.member_row(v, can, why, included.get(v.tier, [])))
     rows.sort(key=lambda r: vids.RANK[r['tier']])

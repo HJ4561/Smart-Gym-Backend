@@ -63,12 +63,14 @@ def _apply(ex, data, errors):
         elif Exercise.objects.filter(name__iexact=name).exclude(id=ex.id).exists():
             errors['name'] = 'Another machine already has this name.'
         ex.name = name
+    # An older machine can hold a value that's no longer a choice ("machine", "quads"). Sending it
+    # back unchanged must not block saving the other fields; picking a new value must be a choice.
     if 'category' in data:
-        if data.get('category') not in CATEGORIES:
+        if data.get('category') not in CATEGORIES and (not ex.pk or data.get('category') != ex.category):
             errors['category'] = 'Choose a category.'
         ex.category = data.get('category')
     if 'primary_muscle' in data:
-        if data.get('primary_muscle') not in MUSCLES:
+        if data.get('primary_muscle') not in MUSCLES and (not ex.pk or data.get('primary_muscle') != ex.primary_muscle):
             errors['primary_muscle'] = 'Choose a muscle group.'
         ex.primary_muscle = data.get('primary_muscle')
     for f, n in TEXT_FIELDS.items():

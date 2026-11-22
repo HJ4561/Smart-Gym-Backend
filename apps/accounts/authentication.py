@@ -32,6 +32,14 @@ class EnforcingJWTAuthentication(JWTAuthentication):
         if result is None:
             return None
         user, token = result
+        # The two gyms never mix: an account only works on its own side's websites (apps.core.sides).
+        from rest_framework.exceptions import AuthenticationFailed
+        from apps.core.sides import set_side, side_of_request
+        asked = side_of_request(request)
+        if asked and asked != user.side:
+            raise AuthenticationFailed('This account belongs to the other gym. Sign in on its own website.')
+        set_side(user.side)          # everything in this request is the account's side
+        request._request.gym_side = user.side
         if user.must_change_password and request.path not in ALLOWED_WHILE_PASSWORD_CHANGE_REQUIRED:
             raise PasswordChangeRequired()
         return user, token

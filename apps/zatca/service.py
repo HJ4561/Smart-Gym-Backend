@@ -242,8 +242,20 @@ def retry_due(limit=100):
     return out
 
 
+def for_side(qs):
+    """One gym's tax documents. The signing chain is shared by both gyms, so documents carry no side of their
+    own: they belong to the side of their payment, or of the signup they were issued for."""
+    from django.db.models import Q
+    from apps.core.sides import current_side
+    s = current_side()
+    if not s:
+        return qs
+    return qs.filter(Q(transaction__side=s) | Q(registration__side=s) | Q(original__transaction__side=s)
+                     | Q(original__registration__side=s))
+
+
 def summary():
-    qs = ZatcaDocument.objects.all()
+    qs = for_side(ZatcaDocument.objects.all())
     return {
         'pending': qs.filter(status='pending').count(),
         'late': qs.filter(status='pending', issued_at__lt=timezone.now() - LATE_AFTER).count(),

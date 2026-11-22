@@ -24,6 +24,8 @@ from apps.shop.models import Order, Product
 from apps.shop.serializers import OrderDetailSerializer
 from apps.site_content.models import SiteItem
 
+from apps.core.roles import IsShopStaff
+
 from .permissions import IsAdminUser
 
 
@@ -176,7 +178,7 @@ def _order_row(o):
 
 
 @api_view(['GET'])
-@permission_classes([IsAdminUser])
+@permission_classes([IsShopStaff])
 def shop_orders(request):
     """
     GET /api/admin/shop/orders/?status=&q=  (status 'open' = paid/preparing/ready/dispatched)
@@ -206,14 +208,14 @@ def shop_orders(request):
 
 
 @api_view(['GET'])
-@permission_classes([IsAdminUser])
+@permission_classes([IsShopStaff])
 def shop_order_detail(request, order_number):
     o = get_object_or_404(Order.objects.select_related('member'), order_number=order_number)
     return Response({**_order_row(o), 'detail': OrderDetailSerializer(o).data})
 
 
 @api_view(['POST'])
-@permission_classes([IsAdminUser])
+@permission_classes([IsShopStaff])     # the shop manager runs orders directly; refunds stay with admins
 def shop_order_status(request, order_number):
     """POST /api/admin/shop/orders/<n>/status/ { status }"""
     new = request.data.get('status')
@@ -407,6 +409,7 @@ def _session_row(s):
         'trainer': {'id': s.trainer_id, 'name': s.trainer.user.full_name},
         'member': {'id': s.member_id, 'name': s.member.full_name, 'email': s.member.email},
         'focus_area': s.focus_area, 'notes': s.notes, 'amount_charged': str(s.amount_charged),
+        'rescheduled_from': s.rescheduled_from, 'change_note': s.change_note,
     }
 
 
@@ -434,6 +437,89 @@ def trainer_session_status(request, session_id):
     """
     row, error = change_session_status(session_id, request.data.get('status'), by='the gym')
     return Response(error, status=400) if error else Response(row)
+
+
+@api_view(['POST'])
+@permission_classes([IsAdminUser])
+def trainer_session_change(request, session_id):
+    """POST /api/admin/trainer-sessions/<id>/change/ {scheduled_at | delay_minutes, duration_minutes, focus_area, notes, reason}"""
+    row, error = edit_session(session_id, request.data, by='the gym')
+    return Response(error, status=400) if error else Response(row)
+
+
+def edit_session(session_id, data, by, trainer_id=None):
+    """
+    Move, delay or edit a scheduled 1-on-1. (row, None) or (None, errors).
+      delay_minutes 5–240     pushes the start back
+      scheduled_at  ISO time  moves it (must be in the future and free on the coach's calendar)
+      duration_minutes 15–240 · focus_area · notes · reason (told to the member)
+    The member is told what changed.
+    """
+    from django.utils.dateparse import parse_datetime
+    from apps.catalog.slots import slot_is_free
+    errors = {}
+    with transaction.atomic():
+        qs = TrainerSession.objects.select_for_update().select_related('trainer__user', 'member')
+        if trainer_id is not None:
+            qs = qs.filter(trainer_id=trainer_id)
+        s = get_object_or_404(qs, id=session_id)
+        if s.status != 'scheduled':
+            return None, {'detail': f'This session is already {s.status}.'}
+        old_start, old_minutes = s.scheduled_at, s.duration_minutes
+        start = s.scheduled_at
+        if data.get('delay_minutes') not in (None, ''):
+            try:
+                n = int(data['delay_minutes'])
+                if not 5 <= n <= 240:
+                    raise ValueError
+                start = s.scheduled_at + timedelta(minutes=n)
+            except (TypeError, ValueError):
+                errors['delay_minutes'] = 'Delay by 5 to 240 minutes.'
+        elif data.get('scheduled_at'):
+            when = parse_datetime(str(data['scheduled_at']))
+            if when is None:
+                errors['scheduled_at'] = 'Choose a date and time.'
+            else:
+                start = timezone.make_aware(when) if timezone.is_naive(when) else when
+        if data.get('duration_minutes') not in (None, ''):
+            try:
+                n = int(data['duration_minutes'])
+                if not 15 <= n <= 240:
+                    raise ValueError
+                s.duration_minutes = n
+            except (TypeError, ValueError):
+                errors['duration_minutes'] = 'Length must be 15–240 minutes.'
+        if 'focus_area' in data:
+            s.focus_area = str(data.get('focus_area') or '').strip()[:120]
+        if 'notes' in data:
+            s.notes = str(data.get('notes') or '').strip()[:4000]
+        reason = str(data.get('reason') or '').strip()[:300]
+        moved = start != old_start
+        if moved and start < timezone.now():
+            errors['scheduled_at'] = 'Choose a time that hasn’t passed.'
+        if not errors and (moved or s.duration_minutes != old_minutes) and \
+                not slot_is_free(s.trainer, start, s.duration_minutes, exclude_id=s.id):
+            errors['scheduled_at'] = 'The coach already has a session then. Choose another time.'
+        if errors:
+            return None, errors
+        if moved:
+            s.rescheduled_from = old_start
+            s.scheduled_at = start
+            s.change_note = reason
+        elif reason:
+            s.change_note = reason
+        s.save()
+    if moved or s.duration_minutes != old_minutes:
+        old, new = timezone.localtime(old_start), timezone.localtime(s.scheduled_at)
+        by_ar = 'النادي' if by == 'the gym' else by
+        why = bi(f' Reason: {reason}', f' السبب: {reason}') if reason else bi('', '')
+        notify(s.member, 'trainer', bi(f'Session moved by {by}', f'غيّر {by_ar} موعد الجلسة'),
+               bi(f'Your session with {s.trainer.user.full_name} moved from {old:%d %b %H:%M} to {new:%d %b %H:%M} '
+                  f'({s.duration_minutes} min).',
+                  f'تغيّر موعد جلستك مع {s.trainer.user.full_name} من {ar_date(old, with_year=False)} {old:%H:%M} '
+                  f'إلى {ar_date(new, with_year=False)} {new:%H:%M} ({s.duration_minutes} دقيقة).') + why,
+               icon='event_repeat', priority='high', action_label='My sessions', action_path='/dashboard/my-sessions')
+    return _session_row(s), None
 
 
 def change_session_status(session_id, new, by, trainer_id=None):

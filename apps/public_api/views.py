@@ -34,7 +34,7 @@ from .serializers import (
     PaymentIdSerializer,
     RejectSerializer,
 )
-from .permissions import IsAdminOrManager
+from apps.core.roles import DeskModule
 from . import moyasar as moyasar_api
 from .moyasar import (
     checkout_params, sync_payment, webhook_token_valid,
@@ -338,6 +338,18 @@ def public_payment_verify(request):
     return _sync_response(ser.validated_data['payment_id'])
 
 
+def _payment_side(meta):
+    """'male' / 'female' for a Moyasar payment's intent or registration (None if neither is ours)."""
+    from apps.payments.models import PaymentIntent
+    for model, key in ((PaymentIntent, 'intent_id'), (MembershipRegistration, 'registration_id')):
+        ref = str(meta.get(key) or '')
+        if ref.isdigit():
+            side = model._base_manager.filter(id=int(ref)).values_list('side', flat=True).first()
+            if side:
+                return side
+    return None
+
+
 @api_view(['POST'])
 @authentication_classes([])
 @permission_classes([AllowAny])
@@ -359,11 +371,16 @@ def moyasar_webhook(request):
         # Member payments (top-ups, orders, sessions, courses, renewals) carry an
         # intent_id; signup payments carry a registration_id.
         payment = moyasar_api.fetch_payment(payment_id)
-        if (payment.get('metadata') or {}).get('intent_id'):
-            from apps.payments.gateway import sync_intent
-            sync_intent(payment_id, payment=payment)
-        else:
-            sync_payment(payment_id, payment=payment)
+        # The webhook comes from Moyasar, not from a gym website: work as the gym the payment belongs to,
+        # so receipts link to the right website and new records land on the right side.
+        from apps.core.sides import using_side
+        meta = payment.get('metadata') or {}
+        with using_side(_payment_side(meta)):
+            if meta.get('intent_id'):
+                from apps.payments.gateway import sync_intent
+                sync_intent(payment_id, payment=payment)
+            else:
+                sync_payment(payment_id, payment=payment)
     except MoyasarUnavailable:
         # Temporary failure — non-2xx so Moyasar retries (guide §7).
         return Response({'detail': 'Retry later.'}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
@@ -377,7 +394,7 @@ def moyasar_webhook(request):
 # ADMIN — REGISTRATIONS
 # ============================================================
 @api_view(['GET'])
-@permission_classes([IsAdminOrManager])
+@permission_classes([DeskModule('registrations')])
 def admin_registrations(request):
     """
     GET /api/admin/registrations/?status=pending&search=&today=true
@@ -417,7 +434,7 @@ def admin_registrations(request):
 
 
 @api_view(['GET'])
-@permission_classes([IsAdminOrManager])
+@permission_classes([DeskModule('registrations')])
 def admin_registration_detail(request, reg_id):
     """GET /api/admin/registrations/<id>/"""
     reg = get_object_or_404(
@@ -428,7 +445,7 @@ def admin_registration_detail(request, reg_id):
 
 
 @api_view(['POST'])
-@permission_classes([IsAdminOrManager])
+@permission_classes([DeskModule('registrations')])
 def admin_approve_registration(request, reg_id):
     """POST /api/admin/registrations/<id>/approve/"""
     reg = get_object_or_404(MembershipRegistration, id=reg_id)
@@ -447,7 +464,7 @@ def admin_approve_registration(request, reg_id):
 
 
 @api_view(['POST'])
-@permission_classes([IsAdminOrManager])
+@permission_classes([DeskModule('registrations')])
 def admin_reject_registration(request, reg_id):
     """POST /api/admin/registrations/<id>/reject/  { reason, refund }"""
     reg = get_object_or_404(MembershipRegistration, id=reg_id)
@@ -462,7 +479,7 @@ def admin_reject_registration(request, reg_id):
 
 
 @api_view(['POST'])
-@permission_classes([IsAdminOrManager])
+@permission_classes([DeskModule('registrations')])
 def admin_bulk_approve(request):
     """
     POST /api/admin/registrations/bulk-approve/
@@ -492,7 +509,7 @@ def admin_bulk_approve(request):
 
 
 @api_view(['GET'])
-@permission_classes([IsAdminOrManager])
+@permission_classes([DeskModule('registrations')])
 def admin_registration_stats(request):
     """GET /api/admin/registrations/stats/"""
     today = date.today()
@@ -517,7 +534,7 @@ def admin_registration_stats(request):
 # ADMIN — MEMBER LOOKUP (gym entry)
 # ============================================================
 @api_view(['GET'])
-@permission_classes([IsAdminOrManager])
+@permission_classes([DeskModule('gate')])
 def admin_member_lookup(request):
     """
     GET /api/admin/members/lookup/?iqama=XXX   (typed Iqama number)
@@ -586,7 +603,7 @@ def admin_member_lookup(request):
 
 
 @api_view(['POST'])
-@permission_classes([IsAdminOrManager])
+@permission_classes([DeskModule('gate')])
 def admin_member_face_verify(request, member_id):
     """
     POST /api/admin/members/<id>/face-verify/
@@ -634,7 +651,7 @@ def admin_member_face_verify(request, member_id):
 
 
 @api_view(['POST'])
-@permission_classes([IsAdminOrManager])
+@permission_classes([DeskModule('gate')])
 def admin_check_in(request, member_id):
     """
     POST /api/admin/members/<id>/check-in/
@@ -661,6 +678,18 @@ def admin_check_in(request, member_id):
             'is_frozen': membership.is_frozen,
             'days_remaining': membership.days_remaining,
         }, status=status.HTTP_400_BAD_REQUEST)
+
+    # First visit: someone at the desk checks the Iqama card and face once. The desk can tick that in the
+    # same request ({"id_checked": true}); the automatic gate can't, so a first-timer goes to the desk.
+    if membership.needs_first_visit_check:
+        if request.data.get('id_checked') is True:
+            membership.id_verified_at, membership.id_verified_by = timezone.now(), request.user
+            membership.save(update_fields=['id_verified_at', 'id_verified_by', 'updated_at'])
+        else:
+            return Response({
+                'detail': 'First visit: check their Iqama card and face at the desk before they go in.',
+                'reason': 'first_visit',
+            }, status=status.HTTP_400_BAD_REQUEST)
 
     # Prevent double check-in
     today = timezone.localdate()
@@ -720,7 +749,7 @@ def admin_check_in(request, member_id):
 
 
 @api_view(['POST'])
-@permission_classes([IsAdminOrManager])
+@permission_classes([DeskModule('gate')])
 def admin_check_out(request, check_in_id):
     """
     POST /api/admin/check-ins/<check_in_id>/check-out/

@@ -76,6 +76,14 @@ def alerts(request):
            f'{plans} عضو طلب خطة وما زال على الأهداف المبدئية.'),
         '/admin/nutrition')
 
+    from apps.approvals.models import ChangeRequest
+    waiting = ChangeRequest.objects.filter(status='pending').count()
+    add('approvals', 'fact_check', waiting, bi('Waiting for your approval', 'بانتظار موافقتك'),
+        bi(f'{waiting} item{"s" if waiting != 1 else ""} from staff and members (videos, products, reviews…) '
+           f'{"are" if waiting != 1 else "is"} hidden until approved.',
+           f'{waiting} عنصر من الموظفين والأعضاء (فيديوهات، منتجات، تقييمات…) مخفي حتى الموافقة.'),
+        '/admin/approvals', 'high')
+
     from apps.catalog.models import Course
     pending = Course.objects.filter(status='pending').count()
     add('courses', 'rate_review', pending, bi('Courses to review', 'دورات للمراجعة'),
@@ -137,6 +145,7 @@ FIRST_LOOK_DAYS = 7   # a section never opened counts the last week
 
 def _activity_counters():
     """section (sidebar path after /admin/) → function(since) returning how many new things happened."""
+    from apps.approvals.models import ChangeRequest
     from apps.catalog.models import Enrollment
     from apps.classes.models import ClassEnrollment
     from apps.members.models import MembershipFacility
@@ -153,6 +162,7 @@ def _activity_counters():
         'finance': lambda t: Transaction.objects.filter(created_at__gt=t).count(),
         'facilities': lambda t: MembershipFacility.objects.filter(created_at__gt=t).count(),
         'site-inbox': lambda t: ContactMessage.objects.filter(created_at__gt=t).count(),
+        'approvals': lambda t: ChangeRequest.objects.filter(status='pending', created_at__gt=t).count(),
     }
 
 

@@ -22,21 +22,25 @@ from apps.core.i18n import bi, language
 from apps.core.mail import send_localized
 from apps.staff.models import StaffProfile
 
+from apps.core.roles import DESK_MODULES
+
 from .permissions import IsAdminUser
 
 logger = logging.getLogger(__name__)
 
-STAFF_ROLES = ['admin', 'manager', 'trainer', 'nutritionist', 'receptionist']
+STAFF_ROLES = ['admin', 'manager', 'trainer', 'nutritionist', 'receptionist', 'shop_manager']
 PORTAL_ROLES = {'admin', 'manager'}             # the admin console
-SIGN_IN_ROLES = PORTAL_ROLES | {'trainer'}      # + the coach portal
-LOGIN_PATH = {'admin': '/admin/login', 'manager': '/admin/login', 'trainer': '/coach/login'}
+SIGN_IN_ROLES = set(STAFF_ROLES)                # every role has its own portal
+LOGIN_PATH = {'admin': '/admin/login', 'manager': '/admin/login', 'trainer': '/coach/login'}   # others: /staff/login
+PORTAL_NAMES = {'trainer': ('coach portal', 'بوابة المدربين'), 'nutritionist': ('nutritionist portal', 'بوابة أخصائي التغذية'),
+                'receptionist': ('front desk portal', 'بوابة الاستقبال'), 'shop_manager': ('shop portal', 'بوابة المتجر')}
 ROLE_LABELS = dict(User.ROLE_CHOICES)
 ROLE_LABELS_AR = {'admin': 'المدير العام', 'manager': 'مدير الفرع', 'trainer': 'مدرب', 'nutritionist': 'أخصائي تغذية',
-                  'receptionist': 'موظف استقبال', 'member': 'عضو'}
+                  'receptionist': 'موظف استقبال', 'shop_manager': 'مدير المتجر', 'member': 'عضو'}
 DEPARTMENTS = dict(StaffProfile.DEPARTMENT_CHOICES)
 STATUSES = dict(StaffProfile.STATUS_CHOICES)
 DEFAULT_DEPT = {'admin': 'executive', 'manager': 'operations', 'trainer': 'coaching',
-                'nutritionist': 'clinical', 'receptionist': 'front_desk'}
+                'nutritionist': 'clinical', 'receptionist': 'front_desk', 'shop_manager': 'retail'}
 
 
 def _parse_time(v):
@@ -80,6 +84,7 @@ def _row(u, now_t=None):
         'can_sign_in': u.role in SIGN_IN_ROLES and u.is_active and u.has_usable_password(),
         'last_login': u.last_login,
         'has_trainer_profile': hasattr(u, 'trainer_profile'),
+        'modules': [m for m in (p.modules or []) if m in DESK_MODULES] if (p and u.role == 'receptionist') else [],
         'two_factor': (getattr(getattr(u, 'two_factor', None), 'method', None)
                        if getattr(getattr(u, 'two_factor', None), 'enabled', False) else None),
     }
@@ -96,9 +101,8 @@ def _invite(u, staff, reset=False):
     u.save(update_fields=['password', 'must_change_password'])
     from apps.accounts.two_factor import forget_devices
     forget_devices(u)
-    coach = u.role == 'trainer'
-    portal, portal_ar = ('coach portal', 'بوابة المدربين') if coach else ('admin', 'لوحة الإدارة')
-    link = f'{member_portal_url()}{LOGIN_PATH.get(u.role, "/admin/login")}'
+    portal, portal_ar = PORTAL_NAMES.get(u.role, ('admin', 'لوحة الإدارة'))
+    link = f'{member_portal_url()}{LOGIN_PATH.get(u.role, "/staff/login")}'
     intro = (f'Your Smart Gym {portal} password was reset.' if reset
              else f'You’ve been added to the Smart Gym team as {ROLE_LABELS.get(u.role, u.role)}.')
     try:
@@ -108,11 +112,11 @@ def _invite(u, staff, reset=False):
             f'Smart Gym — your {portal} sign-in', f'سمارت جيم — بيانات الدخول إلى {portal_ar}'), bi(
             f"Hi {u.first_name or u.email},\n\n{intro}\n\n"
             f"  Sign in at:         {link}\n  Email:              {u.email}\n"
-            f"  Temporary password: {temp}\n\nYou'll choose your own password and set up 2-step verification "
-            "when you first sign in.\n— Smart Gym",
+            f"  Temporary password: {temp}\n\nYou'll choose your own password when you first sign in. "
+            "You can turn on 2-step verification in your profile.\n— Smart Gym",
             f"مرحبًا {u.first_name or u.email}،\n\n{intro_ar}\n\n"
             f"  صفحة الدخول: {link}\n  البريد الإلكتروني: {u.email}\n"
-            f"  كلمة المرور المؤقتة: {temp}\n\nستختار كلمة مرورك وتفعّل التحقق بخطوتين عند أول تسجيل دخول.\n— سمارت جيم"))
+            f"  كلمة المرور المؤقتة: {temp}\n\nستختار كلمة مرورك عند أول تسجيل دخول، ويمكنك تفعيل التحقق بخطوتين من ملفك الشخصي.\n— سمارت جيم"))
     except Exception:   # noqa: BLE001
         logger.exception('Staff invite email to %s failed.', u.email)
         return 'The account is ready but the email failed to send — use “Send sign-in email” to retry.'
@@ -184,6 +188,12 @@ def _validate(data, errors, creating):
             errors['joined_at'] = 'Can’t be in the future.'
     if 'notes' in data:
         out['notes'] = str(data.get('notes') or '')[:2000]
+    if 'modules' in data:
+        raw = data.get('modules') or []
+        if not isinstance(raw, (list, tuple)) or any(m not in DESK_MODULES for m in raw):
+            errors['modules'] = 'Choose front-desk modules from the list.'
+        else:
+            out['modules'] = [m for m in DESK_MODULES if m in raw]      # keep the list's order
     return out
 
 
@@ -205,7 +215,7 @@ def _save(u, fields):
     u.save()
     p, _ = StaffProfile.objects.get_or_create(user=u, defaults={'department': DEFAULT_DEPT.get(u.role, 'operations')})
     p.department = DEFAULT_DEPT.get(u.role, 'operations')   # the role decides the department
-    for f in ('shift_start', 'shift_end', 'joined_at', 'notes'):
+    for f in ('shift_start', 'shift_end', 'joined_at', 'notes', 'modules'):
         if f in fields:
             setattr(p, f, fields[f])
     if 'status' in fields:
@@ -216,6 +226,9 @@ def _save(u, fields):
         from apps.catalog.models import TrainerProfile
         TrainerProfile.objects.get_or_create(user=u, defaults={'title': 'Coach', 'hourly_rate': 0,
                                                                 'is_accepting_clients': False})
+    if u.role == 'nutritionist':
+        from apps.nutrition.models import NutritionistProfile
+        NutritionistProfile.objects.get_or_create(user=u, defaults={'title': 'Nutritionist', 'is_accepting_clients': False})
 
 
 @api_view(['GET', 'POST'])
@@ -253,6 +266,8 @@ def staff(request):
         errors['email'] = msg
     fields = _validate(request.data, errors, creating=True)
     u = User.objects.filter(email__iexact=email).first() if email else None
+    if u is None and email and User._base_manager.filter(email__iexact=email).exists():
+        errors['email'] = 'This email is already used by an account at the other gym.'
     if u is not None and u.role in STAFF_ROLES:
         errors['email'] = 'This person is already on the team.'
     elif u is not None and u.role != 'member':
@@ -362,7 +377,7 @@ def staff_update(request, user_id):
     password = str(request.data.get('password') or '')
     if password:
         if fields.get('role', u.role) not in SIGN_IN_ROLES:
-            errors['password'] = 'Only admins, managers and coaches sign in.'
+            errors['password'] = 'Choose a staff role first.'
         else:
             try:
                 validate_password(password, u)
@@ -441,3 +456,10 @@ def staff_stats(request):
         'avg_tenure_years': round(sum(tenure) / len(tenure), 1) if tenure else 0,
         'by_role': {k: sum(r['role'] == k for r in active) for k in STAFF_ROLES},
     })
+
+
+@api_view(['GET'])
+@permission_classes([IsAdminUser])
+def staff_modules(request):
+    """GET /api/admin/staff/modules/ — front-desk modules an admin can give a receptionist."""
+    return Response([{'value': k, 'label': en, 'label_ar': ar_} for k, (en, ar_) in DESK_MODULES.items()])

@@ -94,11 +94,15 @@ class BilingualDataTests(APITestCase):
         self.assertEqual((r.status_code, r.data['bio_ar']), (200, 'أحب تمارين القوة'))
         course = Course.objects.create(trainer=self.trainer, title='Live', description='x', category='Strength',
                                        status='published')
+        # A live course's changes wait for an admin (apps.approvals): members keep the current title.
         r = self.client.patch(f'/api/coach/courses/{course.id}/', {'title_ar': 'مباشر'}, format='json')
-        self.assertEqual(r.status_code, 400)
-        self.assertIn('title_ar', r.data)
-        r = self.client.patch(f'/api/coach/courses/{course.id}/', {'description_ar': 'وصف'}, format='json')
-        self.assertEqual(r.status_code, 200)
+        self.assertEqual(r.status_code, 202)
+        course.refresh_from_db()
+        self.assertEqual(course.title_ar, '')
+        from apps.approvals.testing import approve_pending
+        approve_pending()
+        course.refresh_from_db()
+        self.assertEqual(course.title_ar, 'مباشر')
 
 
 class BilingualLessonsAndVideosTests(APITestCase):
@@ -138,6 +142,8 @@ class BilingualLessonsAndVideosTests(APITestCase):
         self.client.force_authenticate(admin)
         r = self.client.patch(f"/api/admin/machine-videos/{r.data['id']}/", {'title_ar': 'ضبط مقعد الجهاز'}, format='json')
         self.assertEqual(r.data['title_ar'], 'ضبط مقعد الجهاز')
+        from apps.approvals.testing import approve_pending
+        approve_pending()                          # a coach's new video reaches members once approved
         self.client.force_authenticate(self.member)
         data = self.client.get(f'/api/workouts/exercises/{self.machine.id}/videos/').data
         rows = data['videos'] if isinstance(data, dict) else data

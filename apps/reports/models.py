@@ -1,5 +1,6 @@
 from django.db import models
 from django.conf import settings
+from apps.core.sides import SideManager, side_field
 
 
 class ReportTemplate(models.Model):
@@ -74,6 +75,9 @@ class GeneratedReport(models.Model):
     period_end = models.DateField(null=True, blank=True)
     row_count = models.IntegerField(default=0)
     generated_at = models.DateTimeField(auto_now_add=True)
+
+    side = side_field()            # the male or female gym (apps.core.sides)
+    objects = SideManager()
 
     class Meta:
         db_table = 'generated_reports'

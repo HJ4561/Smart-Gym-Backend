@@ -301,7 +301,8 @@ class PassAndCheckInTests(PortalBase):
     def test_staff_check_in_updates_milestones_and_notifies(self):
         Milestone.objects.create(tier='T1', title='First visit', target_days=1)
         self.client.force_authenticate(self.staff)
-        r = self.client.post(f'/api/admin/registrations-api/members/{self.user.id}/check-in/', {}, format='json')
+        r = self.client.post(f'/api/admin/registrations-api/members/{self.user.id}/check-in/', {'id_checked': True},
+                             format='json')
         self.assertEqual(r.status_code, 201)
         self.assertEqual(MemberMilestone.objects.get(member=self.user).current_days, 1)
         self.assertTrue(Notification.objects.filter(recipient=self.user, category='attendance').exists())

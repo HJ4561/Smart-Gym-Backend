@@ -216,6 +216,8 @@ def trainers(request):
     if msg:
         errors['email'] = msg
     u = User.objects.filter(email__iexact=email).first() if email else None
+    if u is None and email and User._base_manager.filter(email__iexact=email).exists():
+        errors['email'] = 'This email is already used by an account at the other gym.'
     if u is not None and TrainerProfile.objects.filter(user=u).exists():
         errors['email'] = 'This person is already a trainer.'
     if u is None:
@@ -428,8 +430,9 @@ def _apply_course(c, data, errors):
             c.status = data['status']
 
 
-def _replace_modules(c, modules, errors):
-    """Replaces the course's lessons. Lessons a member has completed keep their ids when sent back."""
+def _replace_modules(c, modules, errors, dry_run=False):
+    """Replaces the course's lessons. Lessons a member has completed keep their ids when sent back.
+    dry_run: only check them (a change waiting for approval)."""
     if not isinstance(modules, list) or len(modules) > 200:
         errors['modules'] = 'Send up to 200 lessons.'
         return
@@ -457,7 +460,7 @@ def _replace_modules(c, modules, errors):
         rows.append(m)
         if m.id:
             keep.add(m.id)
-    if errors:
+    if errors or dry_run:
         return
     c.modules.exclude(id__in=keep).delete()
     for m in rows:

@@ -30,6 +30,10 @@ class ReviewRuleTests(Base):
         Enrollment.objects.create(member=self.member, course=self.course, amount_paid=Decimal('200'))
         self.assertEqual(self.course_review().status_code, 201)
         self.course.refresh_from_db()
+        self.assertEqual(self.course.total_reviews, 0)          # waits for the admin
+        from apps.approvals.testing import approve_pending
+        approve_pending()
+        self.course.refresh_from_db()
         self.assertEqual(self.course.total_reviews, 1)
 
     def test_refunded_enrollment_cannot_review(self):
@@ -57,6 +61,8 @@ class ReviewRuleTests(Base):
         Course.objects.filter(pk=self.course.pk).update(title_ar='القوة 101')
         Enrollment.objects.create(member=self.member, course=self.course, status='active')
         self.course_review()
+        from apps.approvals.testing import approve_pending
+        approve_pending()
         cache.delete('public-live-v1')
         live = self.client.get('/api/public/live/').data
         self.assertEqual(live['reviews_count'], 1)

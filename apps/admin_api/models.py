@@ -1,10 +1,11 @@
 from django.db import models
 from django.conf import settings
+from apps.core.sides import SideManager, side_field
 
 
 class SystemSettings(models.Model):
     """
-    Singleton model — always use pk=1.
+    One row per gym side — use get_solo().
     Stores all admin-configurable settings as JSON.
     """
     general = models.JSONField(default=dict, blank=True)
@@ -21,16 +22,24 @@ class SystemSettings(models.Model):
         null=True, blank=True,
     )
 
+    side = side_field()            # the male or female gym (apps.core.sides)
+    objects = SideManager()
+
     class Meta:
         db_table = 'system_settings'
         verbose_name_plural = 'System Settings'
+        constraints = [models.UniqueConstraint(fields=['side'], name='uniq_system_settings_per_side')]
 
     def __str__(self):
         return 'System Settings'
 
     @classmethod
     def get_solo(cls):
-        obj, _ = cls.objects.get_or_create(pk=1)
+        """This gym side's settings (one row per side; the original row, pk=1, is the male side's)."""
+        from apps.core.sides import side_default
+        obj = cls._base_manager.filter(side=side_default()).first()
+        if obj is None:
+            obj, _ = cls._base_manager.get_or_create(side=side_default())
         return obj
 
 class AdminSeen(models.Model):

@@ -274,13 +274,14 @@ class StaffTests(ConsoleBase):
         body = {'email': 'desk@t.local', 'first_name': 'Lina', 'role': 'receptionist', **extra}
         return self.client.post('/api/admin/staff/', body, format='json')
 
-    def test_add_receptionist_no_login_and_manager_gets_invite(self):
-        r = self.add(shift_start='06:00', shift_end='14:00')
-        self.assertEqual((r.status_code, r.data['can_sign_in'], r.data['shift_display']), (201, False, '06:00 - 14:00'))
-        self.assertEqual(len(mail.outbox), 0)
+    def test_receptionist_gets_the_desk_portal_and_manager_the_admin_one(self):
+        r = self.add(shift_start='06:00', shift_end='14:00', modules=['gate', 'registrations'])
+        self.assertEqual((r.status_code, r.data['can_sign_in'], r.data['shift_display']), (201, True, '06:00 - 14:00'))
+        self.assertEqual(sorted(r.data['modules']), ['gate', 'registrations'])
+        self.assertIn('/staff/login', mail.outbox[0].body)
         r = self.add(email='boss@t.local', first_name='Huda', role='manager')
         self.assertEqual((r.status_code, r.data['can_sign_in']), (201, True))
-        self.assertIn('/admin/login', mail.outbox[0].body)
+        self.assertIn('/admin/login', mail.outbox[1].body)
         self.assertTrue(User.objects.get(email='boss@t.local').must_change_password)
 
     def test_duplicate_name_and_bad_email_are_refused(self):

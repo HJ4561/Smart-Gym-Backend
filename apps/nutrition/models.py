@@ -1,5 +1,6 @@
 from django.db import models
 from django.conf import settings
+from apps.core.sides import SideManager, side_field
 
 
 # ============================================
@@ -38,6 +39,9 @@ class NutritionistProfile(models.Model):
 
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
+
+    side = side_field()            # the male or female gym (apps.core.sides)
+    objects = SideManager()
 
     class Meta:
         db_table = 'nutritionist_profiles'
@@ -103,6 +107,9 @@ class NutritionPlan(models.Model):
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
 
+    side = side_field()            # the male or female gym (apps.core.sides)
+    objects = SideManager()
+
     class Meta:
         db_table = 'nutrition_plans'
         ordering = ['-created_at']
@@ -151,6 +158,9 @@ class MealLog(models.Model):
     logged_at = models.DateTimeField(auto_now_add=True)
     logged_date = models.DateField(auto_now_add=True)
 
+    side = side_field()            # the male or female gym (apps.core.sides)
+    objects = SideManager()
+
     class Meta:
         db_table = 'meal_logs'
         ordering = ['-logged_at']
@@ -171,6 +181,9 @@ class WaterIntake(models.Model):
     )
     date = models.DateField(auto_now_add=True)
     amount_ml = models.IntegerField(default=0)
+
+    side = side_field()            # the male or female gym (apps.core.sides)
+    objects = SideManager()
 
     class Meta:
         db_table = 'water_intake'
@@ -203,6 +216,9 @@ class DexaScan(models.Model):
     # Notes
     notes = models.TextField(blank=True)
     report_url = models.URLField(blank=True)
+
+    side = side_field()            # the male or female gym (apps.core.sides)
+    objects = SideManager()
 
     class Meta:
         db_table = 'dexa_scans'

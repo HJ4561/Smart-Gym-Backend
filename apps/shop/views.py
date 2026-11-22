@@ -37,7 +37,7 @@ def categories_list(request):
     """
     GET /api/shop/categories/
     """
-    qs = ProductCategory.objects.filter(is_active=True)
+    qs = ProductCategory.objects.filter(is_active=True, approval_status='approved')
     return Response(ProductCategorySerializer(qs, many=True).data)
 
 
@@ -53,7 +53,8 @@ def products_list(request):
     Out-of-stock products are left out unless ?in_stock=false (the admin shop lists everything).
     """
     expire_stale_orders()
-    qs = Product.objects.filter(is_active=True, category__is_active=True).select_related('category')
+    qs = Product.objects.filter(is_active=True, approval_status='approved', category__is_active=True,
+                                category__approval_status='approved').select_related('category')
 
     category = request.query_params.get('category')
     if category:
@@ -80,7 +81,7 @@ def product_detail(request, product_id):
     """
     GET /api/shop/products/<id>/
     """
-    product = get_object_or_404(Product, id=product_id, is_active=True)
+    product = get_object_or_404(Product, id=product_id, is_active=True, approval_status='approved')
     return Response(ProductDetailSerializer(product).data)
 
 
@@ -110,7 +111,7 @@ def add_to_cart(request):
     if quantity <= 0:
         return Response({'detail': 'Quantity must be positive.'}, status=status.HTTP_400_BAD_REQUEST)
 
-    product = get_object_or_404(Product, id=product_id, is_active=True)
+    product = get_object_or_404(Product, id=product_id, is_active=True, approval_status='approved')
 
     if product.is_out_of_stock:
         return Response({'detail': 'Product is out of stock.'}, status=status.HTTP_400_BAD_REQUEST)

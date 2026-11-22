@@ -1,6 +1,7 @@
 from django.db import models
 from django.conf import settings
 from apps.catalog.models import TrainerProfile
+from apps.core.sides import SideManager, side_field
 
 
 class GymClass(models.Model):
@@ -55,6 +56,9 @@ class GymClass(models.Model):
 
     created_at = models.DateTimeField(auto_now_add=True)
 
+    side = side_field()            # the male or female gym (apps.core.sides)
+    objects = SideManager()
+
     class Meta:
         db_table = 'gym_classes'
         ordering = ['day_of_week', 'start_time']
@@ -82,6 +86,9 @@ class ClassEnrollment(models.Model):
     status = models.CharField(max_length=20, choices=STATUS_CHOICES, default='enrolled')
     enrolled_at = models.DateTimeField(auto_now_add=True)
 
+    side = side_field()            # the male or female gym (apps.core.sides)
+    objects = SideManager()
+
     class Meta:
         db_table = 'class_enrollments'
         unique_together = ['gym_class', 'member']
@@ -106,9 +113,42 @@ class ClassPass(models.Model):
     is_cancelled = models.BooleanField(default=False)
     created_at = models.DateTimeField(auto_now_add=True)
 
+    side = side_field()            # the male or female gym (apps.core.sides)
+    objects = SideManager()
+
     class Meta:
         db_table = 'class_passes'
         ordering = ['-created_at']
 
     def __str__(self):
         return f'{self.gym_class.name} — {self.member.email} ({self.kind})'
+
+
+class ClassPost(models.Model):
+    """
+    A coach's note or video for the members of one of their classes (optionally about one date).
+    Messages reach the class at once; videos wait for an admin first (apps.approvals).
+    """
+    KIND_CHOICES = [('message', 'Message'), ('video', 'Video')]
+    APPROVAL = [('pending', 'Waiting for approval'), ('approved', 'Approved'), ('rejected', 'Not approved')]
+
+    gym_class = models.ForeignKey(GymClass, on_delete=models.CASCADE, related_name='posts')
+    author = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.SET_NULL, null=True, related_name='+')
+    kind = models.CharField(max_length=10, choices=KIND_CHOICES, default='message')
+    for_date = models.DateField(null=True, blank=True)          # one session of the class, or the class in general
+    title = models.CharField(max_length=120)
+    body = models.TextField(blank=True)
+    video_url = models.CharField(max_length=300, blank=True)
+    thumbnail_url = models.CharField(max_length=500, blank=True)
+    approval_status = models.CharField(max_length=10, choices=APPROVAL, default='approved')
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    side = side_field()            # the male or female gym (apps.core.sides)
+    objects = SideManager()
+
+    class Meta:
+        db_table = 'class_posts'
+        ordering = ['-created_at']
+
+    def __str__(self):
+        return f'{self.gym_class.name} — {self.title}'

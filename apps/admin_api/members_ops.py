@@ -20,6 +20,7 @@ from rest_framework.decorators import api_view, permission_classes
 from rest_framework.pagination import PageNumberPagination
 from rest_framework.response import Response
 
+from apps.core.roles import DeskRead
 from apps.accounts.models import User
 from apps.core.i18n import ar_date, bi, language
 from apps.core.mail import send_localized
@@ -68,7 +69,7 @@ MEMBER_FILTERS = {'plan': ('membership__plan__name', 'str'), 'active': ('is_acti
 
 
 @api_view(['GET'])
-@permission_classes([IsAdminUser])
+@permission_classes([DeskRead('members')])
 def members_list(request):
     """
     GET /api/admin/members/?search=&status=active|expiring|expired|frozen|none|inactive&page=
@@ -107,7 +108,7 @@ def members_list(request):
 
 
 @api_view(['GET'])
-@permission_classes([IsAdminUser])
+@permission_classes([DeskRead('members')])
 def member_stats(request):
     """GET /api/admin/members/stats/ — counts for the filter chips."""
     today = timezone.localdate()
@@ -127,7 +128,7 @@ def member_stats(request):
 
 
 @api_view(['GET'])
-@permission_classes([IsAdminUser])
+@permission_classes([DeskRead('members')])
 def member_detail(request, user_id):
     """GET /api/admin/members/<id>/ — the member file."""
     u = get_object_or_404(User.objects.select_related('membership__plan'), id=user_id)

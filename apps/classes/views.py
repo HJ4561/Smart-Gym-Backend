@@ -24,6 +24,7 @@ from rest_framework.decorators import api_view, permission_classes
 from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
 
+from apps.core.roles import DeskRead
 from apps.admin_api.permissions import IsAdminUser
 from apps.catalog.models import TrainerProfile
 from apps.core.i18n import DAYS_AR, ar, ar_day, bi, pick, read_ar, with_ar
@@ -102,6 +103,25 @@ def _promote_waitlist(c):
 
 # ============================================================
 # MEMBERS
+# ============================================================
+@api_view(['GET'])
+@permission_classes([IsAuthenticated])
+def member_class_posts(request, class_id):
+    """
+    GET /api/classes/<id>/posts/ — the coach's messages and (approved) videos for a class the member is
+    booked into or bought a session of. Newest first.
+    """
+    from apps.coach.extra import _post_row
+    c = get_object_or_404(GymClass, id=class_id)
+    u = request.user
+    member_of = (c.enrollments.filter(member=u, status__in=('enrolled', 'attended')).exists()
+                 or ClassPass.objects.filter(gym_class=c, member=u, is_cancelled=False).exists())
+    if not member_of and u.role not in ('admin', 'manager') and not (c.trainer_id and c.trainer.user_id == u.id):
+        return Response({'detail': 'Book this class to see what your coach shares.'}, status=403)
+    posts = c.posts.filter(approval_status='approved').select_related('author')[:50]
+    return Response([_post_row(p) for p in posts])
+
+
 # ============================================================
 @api_view(['GET'])
 @permission_classes([IsAuthenticated])
@@ -391,7 +411,7 @@ def _apply_paid(c, data, errors):
 
 
 @api_view(['GET', 'POST'])
-@permission_classes([IsAdminUser])
+@permission_classes([DeskRead('classes')])
 def admin_classes(request):
     """GET /api/classes/admin/?day=&q=&include_paused=1 · POST {name, category, day_of_week, start_time, …}"""
     if request.method == 'GET':
@@ -461,7 +481,7 @@ def admin_class_detail(request, class_id):
 
 
 @api_view(['GET'])
-@permission_classes([IsAdminUser])
+@permission_classes([DeskRead('classes')])
 def admin_class_roster(request, class_id):
     c = get_object_or_404(GymClass, id=class_id)
     return Response(roster(c))
@@ -504,7 +524,7 @@ def admin_roster_remove(request, class_id, enrollment_id):
 
 
 @api_view(['GET'])
-@permission_classes([IsAdminUser])
+@permission_classes([DeskRead('classes')])
 def classes_schedule(request):
     """GET /api/classes/schedule/ — active classes grouped by start time × day (Mon–Sun)."""
     slots = {}
@@ -515,7 +535,7 @@ def classes_schedule(request):
 
 
 @api_view(['GET'])
-@permission_classes([IsAdminUser])
+@permission_classes([DeskRead('classes')])
 def classes_stats(request):
     """GET /api/classes/stats/ — fill rate = booked spots ÷ capacity across active classes."""
     active = list(_annotated(GymClass.objects.filter(is_active=True)))

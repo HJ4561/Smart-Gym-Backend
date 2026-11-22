@@ -42,18 +42,18 @@ def build_live():
     active = Membership.objects.filter(status__in=['active', 'expiring', 'frozen']).count()
 
     reviews = []
-    for r in TrainerReview.objects.select_related('member', 'trainer__user').exclude(comment='').filter(rating__gte=4)[:6]:
+    for r in TrainerReview.objects.filter(status='approved').select_related('member', 'trainer__user').exclude(comment='').filter(rating__gte=4)[:6]:
         reviews.append({'name': _short_name(r.member), 'rating': r.rating, 'comment': r.comment,
                         'about': r.trainer.user.full_name, 'about_ar': r.trainer.user.full_name, 'kind': 'trainer',
                         'created_at': r.created_at})
-    for r in CourseReview.objects.select_related('member', 'course').exclude(comment='').filter(rating__gte=4)[:6]:
+    for r in CourseReview.objects.filter(status='approved').select_related('member', 'course').exclude(comment='').filter(rating__gte=4)[:6]:
         reviews.append({'name': _short_name(r.member), 'rating': r.rating, 'comment': r.comment,
                         'about': r.course.title, 'about_ar': r.course.title_ar or r.course.title, 'kind': 'course',
                         'created_at': r.created_at})
     reviews.sort(key=lambda r: r['created_at'], reverse=True)
 
-    ratings = [x for x in (TrainerReview.objects.aggregate(a=Avg('rating'), n=Count('id')),
-                           CourseReview.objects.aggregate(a=Avg('rating'), n=Count('id'))) if x['n']]
+    ratings = [x for x in (TrainerReview.objects.filter(status='approved').aggregate(a=Avg('rating'), n=Count('id')),
+                           CourseReview.objects.filter(status='approved').aggregate(a=Avg('rating'), n=Count('id'))) if x['n']]
     total_reviews = sum(x['n'] for x in ratings)
     avg_rating = round(sum(x['a'] * x['n'] for x in ratings) / total_reviews, 1) if total_reviews else None
 

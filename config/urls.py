@@ -5,6 +5,7 @@ from django.conf.urls.static import static
 
 from apps.site_content.urls import public_urlpatterns as site_content_public
 from apps.zatca.urls import member_urlpatterns as zatca_member_urls
+from apps.approvals.urls import admin_urlpatterns as approvals_admin_urls, staff_urlpatterns as approvals_staff_urls
 
 
 urlpatterns = [
@@ -31,7 +32,11 @@ urlpatterns = [
     # ----- Existing admin dashboard API -----
     # (members, machines, finance, analytics, audit-feed, arena-heatmap, etc.)
     path('api/admin/', include('apps.admin_api.urls')),
+    # ----- Approval queue (admin) and staff activity log; staff follow their own requests -----
+    path('api/admin/', include((approvals_admin_urls, 'approvals_admin'))),
+    path('api/approvals/', include((approvals_staff_urls, 'approvals_staff'))),
     path('api/coach/', include('apps.coach.urls')),
+    path('api/nutritionist/', include('apps.nutrition.portal_urls')),
 
     # ----- Public site (no auth) -----
     path('api/public/', include('apps.public_api.urls')),

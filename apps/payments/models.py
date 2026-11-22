@@ -1,6 +1,7 @@
 from django.db import models
 from django.conf import settings
 from decimal import Decimal
+from apps.core.sides import SideManager, side_field
 
 
 class PaymentMethod(models.Model):
@@ -31,6 +32,9 @@ class PaymentMethod(models.Model):
     gateway_token = models.CharField(max_length=100, blank=True)
 
     created_at = models.DateTimeField(auto_now_add=True)
+
+    side = side_field()            # the male or female gym (apps.core.sides)
+    objects = SideManager()
 
     class Meta:
         db_table = 'payment_methods'
@@ -97,6 +101,9 @@ class Transaction(models.Model):
     created_at = models.DateTimeField(auto_now_add=True)
     settled_at = models.DateTimeField(null=True, blank=True)
 
+    side = side_field()            # the male or female gym (apps.core.sides)
+    objects = SideManager()
+
     class Meta:
         db_table = 'transactions'
         ordering = ['-created_at']
@@ -115,6 +122,9 @@ class LockerCredit(models.Model):
     balance = models.DecimalField(max_digits=10, decimal_places=2, default=0)
     max_cap = models.DecimalField(max_digits=10, decimal_places=2, default=100)
     updated_at = models.DateTimeField(auto_now=True)
+
+    side = side_field()            # the male or female gym (apps.core.sides)
+    objects = SideManager()
 
     class Meta:
         db_table = 'locker_credits'
@@ -159,6 +169,9 @@ class Invoice(models.Model):
     issued_at = models.DateTimeField(auto_now_add=True)
     due_at = models.DateField(null=True, blank=True)
     paid_at = models.DateTimeField(null=True, blank=True)
+
+    side = side_field()            # the male or female gym (apps.core.sides)
+    objects = SideManager()
 
     class Meta:
         db_table = 'invoices'
@@ -236,6 +249,9 @@ class PaymentIntent(models.Model):
     transaction = models.ForeignKey(Transaction, on_delete=models.SET_NULL, null=True, blank=True, related_name='+')
     created_at = models.DateTimeField(auto_now_add=True)
     paid_at = models.DateTimeField(null=True, blank=True)
+
+    side = side_field()            # the male or female gym (apps.core.sides)
+    objects = SideManager()
 
     class Meta:
         db_table = 'payment_intents'

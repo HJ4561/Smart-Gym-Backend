@@ -168,10 +168,11 @@ class TrainerSessionSerializer(serializers.ModelSerializer):
         fields = [
             'id', 'trainer', 'trainer_name', 'trainer_title', 'trainer_title_ar', 'trainer_photo', 'trainer_id',
             'scheduled_at', 'duration_minutes', 'status',
-            'focus_area', 'notes', 'amount_charged',
+            'focus_area', 'notes', 'amount_charged', 'rescheduled_from', 'change_note',
             'created_at',
         ]
-        read_only_fields = ['id', 'trainer', 'status', 'duration_minutes', 'amount_charged', 'created_at']
+        read_only_fields = ['id', 'trainer', 'status', 'duration_minutes', 'amount_charged', 'rescheduled_from',
+                            'change_note', 'created_at']
 
 
 # ============================================
@@ -182,8 +183,8 @@ class CourseReviewSerializer(serializers.ModelSerializer):
 
     class Meta:
         model = CourseReview
-        fields = ['id', 'member_name', 'rating', 'comment', 'created_at']
-        read_only_fields = ['id', 'created_at']
+        fields = ['id', 'member_name', 'rating', 'comment', 'status', 'created_at']
+        read_only_fields = ['id', 'status', 'created_at']
 
 
 class TrainerReviewSerializer(serializers.ModelSerializer):
@@ -191,5 +192,5 @@ class TrainerReviewSerializer(serializers.ModelSerializer):
 
     class Meta:
         model = TrainerReview
-        fields = ['id', 'member_name', 'rating', 'comment', 'created_at']
-        read_only_fields = ['id', 'created_at']
+        fields = ['id', 'member_name', 'rating', 'comment', 'status', 'created_at']
+        read_only_fields = ['id', 'status', 'created_at']

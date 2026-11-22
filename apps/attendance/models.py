@@ -1,5 +1,6 @@
 from django.db import models
 from django.conf import settings
+from apps.core.sides import SideManager, side_field
 
 
 class Milestone(models.Model):
@@ -54,6 +55,9 @@ class MemberMilestone(models.Model):
     progress = models.IntegerField(default=0)      # 0-100
     current_days = models.IntegerField(default=0)
     claimed_at = models.DateTimeField(null=True, blank=True)
+
+    side = side_field()            # the male or female gym (apps.core.sides)
+    objects = SideManager()
 
     class Meta:
         db_table = 'member_milestones'

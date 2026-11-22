@@ -6,7 +6,7 @@ The coach portal: everything a trainer (role "trainer") manages for themselves.
   /api/coach/sessions/            their 1-on-1 sessions; POST <id>/status/ completed|no_show|cancelled
   /api/coach/courses/             their courses (drafts → sent for review → published by the gym)
   /api/coach/students/            members in their courses and their 1-on-1 clients
-  /api/coach/classes/             group classes they teach, with rosters
+  /api/coach/classes/             group classes they teach (apps.coach.extra: dates, posts)
   /api/coach/machines/ · videos/  Machine Guide videos (Basic free · Advanced · Premium)
   /api/coach/reviews/ · earnings/
 
@@ -202,7 +202,6 @@ def session_status(request, session_id):
 COACH_COURSE_FIELDS = ('title', 'title_ar', 'subtitle', 'subtitle_ar', 'description', 'description_ar', 'category',
                        'level', 'duration_weeks', 'days_per_week',
                        'estimated_minutes_per_session', 'price', 'promo_video_url')
-LOCKED_WHEN_PUBLISHED = ('price', 'title', 'title_ar')
 
 
 def _course(request, course_id):
@@ -210,9 +209,12 @@ def _course(request, course_id):
 
 
 def _coach_course_row(c, modules=False):
+    from apps.approvals.registry import pending_for
     row = catalog_ops._course_row(c, modules=modules)
     row['review_note'] = c.review_note
     row['submitted_at'] = c.submitted_at
+    waiting = pending_for('coach.course', c.pk).filter(kind='update').first()
+    row['pending_change'] = waiting.payload if waiting else None    # a live course's change waiting for an admin
     return row
 
 
@@ -262,13 +264,16 @@ def course_detail(request, course_id):
     data = {k: v for k, v in request.data.items() if k in COACH_COURSE_FIELDS}
     errors = {}
     if c.status == 'published':
-        for f in LOCKED_WHEN_PUBLISHED:
-            if f in data and str(data[f]).strip() != str(getattr(c, f)).strip():
-                if f == 'price' and catalog_ops._f(data[f]) == catalog_ops._f(c.price):
-                    continue
-                errors[f] = f'The {f} of a published course is changed by the gym — message them.'
-    if not errors:
-        catalog_ops._apply_course(c, data, errors)
+        # Live course: members keep the current version until an admin approves the change.
+        from apps.approvals.registry import submit_update
+        change = {**data, **({'modules': request.data['modules']} if 'modules' in request.data else {})}
+        cr, errors = submit_update(request.user, 'coach.course', c, change)
+        if errors:
+            return Response(errors, status=400)
+        row = _coach_course_row(c, modules=True)
+        return Response({**row, 'detail': 'Sent to an admin for approval. Members keep seeing the current version '
+                                          'until then.'} if cr else row, status=202 if cr else 200)
+    catalog_ops._apply_course(c, data, errors)
     if not errors and c.status == 'published' and 'modules' in request.data and not request.data['modules']:
         errors['modules'] = 'A published course needs at least one lesson.'
     if errors:
@@ -356,20 +361,10 @@ def students(request):
 
 @api_view(['GET'])
 @permission_classes([IsCoach])
-def classes(request):
-    """GET /api/coach/classes/ — the group classes they teach, each with its roster."""
-    from apps.classes.views import _annotated, roster
-    t = _me(request)
-    qs = _annotated(GymClass.objects.filter(trainer=t)).order_by('-is_active', 'day_of_week', 'start_time')
-    return Response([roster(c) for c in qs])
-
-
-@api_view(['GET'])
-@permission_classes([IsCoach])
 def reviews(request):
     """GET /api/coach/reviews/"""
     t = _me(request)
-    qs = TrainerReview.objects.filter(trainer=t).select_related('member').order_by('-created_at')[:100]
+    qs = TrainerReview.objects.filter(trainer=t, status='approved').select_related('member').order_by('-created_at')[:100]
     return Response({'rating': _f(t.rating), 'total': t.total_reviews, 'reviews': [{
         'id': r.id, 'rating': r.rating, 'comment': r.comment, 'created_at': r.created_at,
         'member': (r.member.first_name or 'Member') + (f' {r.member.last_name[:1]}.' if r.member.last_name else ''),
@@ -419,18 +414,26 @@ def videos(request):
     """GET my videos · POST {exercise_id, tier, title, video_url, duration_minutes, price, description}."""
     t = _me(request)
     if request.method == 'GET':
+        from .extra import with_pending_video
         qs = vids.with_sales(ExerciseVideo.objects.filter(coach=t)).order_by('exercise__name', 'created_at')
-        return Response([vids.coach_row(v) for v in qs])
+        st = request.query_params.get('status')
+        if st in ('pending', 'approved', 'rejected'):
+            qs = qs.filter(approval_status=st)
+        if q := (request.query_params.get('q') or '').strip():
+            qs = qs.filter(Q(title__icontains=q) | Q(exercise__name__icontains=q))
+        return Response([with_pending_video(vids.coach_row(v)) for v in qs])
     ex = Exercise.objects.filter(id=request.data.get('exercise_id'), is_active=True).first()
     errors = {}
     if ex is None:
         errors['exercise_id'] = 'Choose a machine.'
-    v = ExerciseVideo(exercise=ex, coach=t, tier='basic')
+    v = ExerciseVideo(exercise=ex, coach=t, tier='basic', approval_status='pending')   # an admin approves it first
     vids.apply(v, {'title': '', 'video_url': '', 'tier': 'basic', 'price': 0, **request.data}, errors)
     if errors:
         return Response(errors, status=400)
     v.save()
-    return Response(vids.coach_row(v), status=201)
+    from apps.approvals.registry import submit_create
+    submit_create(request.user, 'coach.video', v)
+    return Response({**vids.coach_row(v), 'detail': 'Video sent — members see it once an admin approves it.'}, status=201)
 
 
 @api_view(['PATCH', 'DELETE'])
@@ -440,17 +443,14 @@ def video_detail(request, video_id):
     """PATCH any field (or is_active to hide it) · DELETE one nobody has bought (hide it otherwise)."""
     t = _me(request)
     v = get_object_or_404(ExerciseVideo.objects.select_related('exercise', 'coach__user'), id=video_id, coach=t)
+    from apps.approvals.registry import pending_for
     if request.method == 'DELETE':
         if v.purchases.exists():
             return Response({'detail': 'Members have bought this video — hide it instead, so they keep access.'}, status=400)
+        pending_for('coach.video', v.pk).update(status='withdrawn')
         v.delete()
         return Response(status=204)
-    errors = {}
     if v.purchases.exists() and 'tier' in request.data and request.data['tier'] != v.tier:
-        errors['tier'] = 'Members bought this video, so its tier can’t change. Add a new video instead.'
-    if not errors:
-        vids.apply(v, request.data, errors)
-    if errors:
-        return Response(errors, status=400)
-    v.save()
-    return Response(vids.coach_row(v))
+        return Response({'tier': 'Members bought this video, so its tier can’t change. Add a new video instead.'}, status=400)
+    from .extra import video_change
+    return video_change(request, v, request.data)

@@ -59,10 +59,12 @@ INSTALLED_APPS = [
     'apps.public_api',
     'apps.site_content',
     'apps.zatca',
+    'apps.approvals',
 ]
 
 MIDDLEWARE = [
     'corsheaders.middleware.CorsMiddleware',           # first
+    'apps.core.sides.SideMiddleware',                  # male / female gym from the calling website
     'django.middleware.security.SecurityMiddleware',
     'whitenoise.middleware.WhiteNoiseMiddleware',      # <-- must be here
     'django.contrib.sessions.middleware.SessionMiddleware',
@@ -72,6 +74,7 @@ MIDDLEWARE = [
     'django.contrib.auth.middleware.AuthenticationMiddleware',
     'django.contrib.messages.middleware.MessageMiddleware',
     'django.middleware.clickjacking.XFrameOptionsMiddleware',
+    'apps.approvals.activity.StaffActivityMiddleware',   # staff changes → activity log (after auth)
 ]
 
 ROOT_URLCONF = 'config.urls'
@@ -315,7 +318,11 @@ FRONTEND_URL = config('FRONTEND_URL', default='http://localhost:5173')
 
 # Frontends that may always call this API, on top of the env lists above (CORS / CSRF) — and shown as portal
 # links in the admin Settings page. Added last, so emails keep using the first https portal in FRONTEND_URL.
-EXTRA_FRONTEND_ORIGINS = ['https://female-smart-gym.vercel.app']
+# The female gym's website(s): requests from these are the female side, everything else the male side
+# (apps.core.sides). The first one is where female members' and staff's email links point.
+FEMALE_FRONTEND_ORIGINS = config('FEMALE_FRONTEND_ORIGINS', default='https://female-smart-gym.vercel.app',
+                                 cast=lambda v: [s.strip().rstrip('/') for s in v.split(',') if s.strip()])
+EXTRA_FRONTEND_ORIGINS = list(FEMALE_FRONTEND_ORIGINS)
 for _origin in EXTRA_FRONTEND_ORIGINS:
     if _origin not in CORS_ALLOWED_ORIGINS:
         CORS_ALLOWED_ORIGINS.append(_origin)

@@ -1,5 +1,12 @@
 from django.contrib.auth.models import AbstractUser
 from django.db import models
+from django.contrib.auth.models import UserManager
+
+from apps.core.sides import SideFilterMixin, side_field
+
+
+class SideUserManager(SideFilterMixin, UserManager):
+    """Users of the current gym side only (apps.core.sides)."""
 
 
 class User(AbstractUser):
@@ -8,6 +15,7 @@ class User(AbstractUser):
         ('trainer', 'Trainer'),
         ('nutritionist', 'Nutritionist'),
         ('receptionist', 'Receptionist'),
+        ('shop_manager', 'Shop Manager'),
         ('manager', 'Branch Manager'),
         ('admin', 'Super Admin'),
     ]
@@ -32,6 +40,9 @@ class User(AbstractUser):
 
     USERNAME_FIELD = 'email'
     REQUIRED_FIELDS = ['username']
+
+    side = side_field()            # the male or female gym (apps.core.sides)
+    objects = SideUserManager()
 
     class Meta:
         db_table = 'users'

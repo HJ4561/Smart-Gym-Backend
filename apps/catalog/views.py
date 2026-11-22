@@ -6,7 +6,7 @@ from django.shortcuts import get_object_or_404
 from django.utils import timezone
 from datetime import timedelta
 from django.db import transaction as db_transaction
-from django.db.models import Avg, Count, F, Q
+from django.db.models import F, Q
 
 from .models import (
     TrainerProfile, TrainerAvailability,
@@ -59,7 +59,8 @@ def trainer_detail(request, trainer_id):
     # Include their courses
     courses = trainer.courses.filter(status='published')
     data['courses'] = CourseListSerializer(courses, many=True, context={'request': request}).data
-    data['reviews'] = TrainerReviewSerializer(trainer.reviews.select_related('member')[:20], many=True).data
+    data['reviews'] = TrainerReviewSerializer(trainer.reviews.filter(status='approved').select_related('member')[:20],
+                                              many=True).data
     if request.user.is_authenticated:
         mine = trainer.reviews.filter(member=request.user).first()
         data['my_review'] = TrainerReviewSerializer(mine).data if mine else None
@@ -82,11 +83,11 @@ def _can_review(member, trainer):
     return False, 'You can review this coach after a session with them or after joining one of their courses.'
 
 
-def _refresh_trainer_rating(trainer):
-    agg = trainer.reviews.aggregate(avg=Avg('rating'), n=Count('id'))
-    trainer.rating = round(agg['avg'] or 0, 2)
-    trainer.total_reviews = agg['n']
-    trainer.save(update_fields=['rating', 'total_reviews'])
+def _queue_review(user, key, review):
+    """A new or changed review waits for an admin (one waiting request per review)."""
+    from apps.approvals.registry import pending_for, submit_create
+    if not pending_for(key, review.pk).exists():
+        submit_create(user, key, review)
 
 
 # ============================================
@@ -140,8 +141,15 @@ def course_detail(request, course_id):
             m['video_url'] = ''
             m['pdf_url'] = ''
     # Add reviews
-    reviews = course.reviews.all()[:10]
+    reviews = course.reviews.filter(status='approved')[:10]
     data['reviews'] = CourseReviewSerializer(reviews, many=True).data
+    # The member's own review (even while it waits for the gym) and whether they may write one.
+    mine = CourseReview.objects.filter(course=course, member=request.user).first() if request.user.is_authenticated else None
+    can = bool(request.user.is_authenticated and Enrollment.objects.filter(
+        member=request.user, course=course, status__in=REVIEWABLE_ENROLLMENTS).exists())
+    data['my_review'] = CourseReviewSerializer(mine).data if mine else None
+    data['can_review'] = can
+    data['review_hint'] = None if can else 'You can review this course after you join it.'
     return Response(data)
 
 
@@ -392,31 +400,26 @@ def trainer_slots(request, trainer_id):
 def review_course(request, course_id):
     """
     POST /api/catalog/courses/<id>/review/
-    Body: { "rating": 5, "comment": "Great course!" }
+    Body: { "rating": 5, "comment": "Great course!" } — sending again updates your review.
     """
     course = get_object_or_404(Course, id=course_id, status='published')
 
     if not Enrollment.objects.filter(member=request.user, course=course, status__in=REVIEWABLE_ENROLLMENTS).exists():
         return Response({'detail': 'You can review this course after you join it.'},
                         status=status.HTTP_400_BAD_REQUEST)
-    if CourseReview.objects.filter(course=course, member=request.user).exists():
-        return Response(
-            {'detail': 'You already reviewed this course.'},
-            status=status.HTTP_400_BAD_REQUEST,
-        )
 
-    serializer = CourseReviewSerializer(data=request.data)
-    if serializer.is_valid():
-        serializer.save(course=course, member=request.user)
-
-        # Recalculate course rating
-        reviews = course.reviews.all()
-        course.rating = round(sum(r.rating for r in reviews) / reviews.count(), 2)
-        course.total_reviews = reviews.count()
-        course.save()
-
-        return Response(serializer.data, status=status.HTTP_201_CREATED)
-    return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+    from .reviews import check_review, refresh_course_rating
+    values, errors = check_review(request.data)
+    if errors:
+        return Response(errors, status=status.HTTP_400_BAD_REQUEST)
+    # Sending again updates the review; a changed review goes back to the admin.
+    review, created = CourseReview.objects.update_or_create(
+        course=course, member=request.user, defaults={**values, 'status': 'pending'})
+    refresh_course_rating(course)
+    _queue_review(request.user, 'catalog.course_review', review)
+    return Response({**CourseReviewSerializer(review).data,
+                     'detail': 'Thanks! Your review will show once the gym approves it.'},
+                    status=status.HTTP_201_CREATED if created else status.HTTP_200_OK)
 
 
 @api_view(['POST'])
@@ -431,23 +434,18 @@ def review_trainer(request, trainer_id):
     if not allowed:
         return Response({'detail': why}, status=status.HTTP_400_BAD_REQUEST)
 
-    errors = {}
-    try:
-        rating = int(str(request.data.get('rating', '')).strip())
-        if not 1 <= rating <= 5:
-            raise ValueError
-    except (TypeError, ValueError):
-        errors['rating'] = 'Choose a rating from 1 to 5 stars.'
-    comment = ' '.join(str(request.data.get('comment') or '').split())
-    if len(comment) > 1000:
-        errors['comment'] = 'Keep your review under 1000 characters.'
+    from .reviews import check_review, refresh_trainer_rating
+    values, errors = check_review(request.data)
     if errors:
         return Response(errors, status=status.HTTP_400_BAD_REQUEST)
 
+    # A changed review goes back to the admin; until then it's off the coach's page and rating.
     review, created = TrainerReview.objects.update_or_create(
-        trainer=trainer, member=request.user, defaults={'rating': rating, 'comment': comment})
-    _refresh_trainer_rating(trainer)
-    return Response(TrainerReviewSerializer(review).data,
+        trainer=trainer, member=request.user, defaults={**values, 'status': 'pending'})
+    refresh_trainer_rating(trainer)
+    _queue_review(request.user, 'catalog.trainer_review', review)
+    return Response({**TrainerReviewSerializer(review).data,
+                     'detail': 'Thanks! Your review will show once the gym approves it.'},
                     status=status.HTTP_201_CREATED if created else status.HTTP_200_OK)
 
     # ============================================

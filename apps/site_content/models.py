@@ -8,6 +8,8 @@ the shipped values are kept in default_* so any slot can be reset.
 from django.conf import settings
 from django.db import models
 
+from apps.core.sides import SideManager, side_field
+
 PAGES = {
     'meta': 'Site (browser title)',
     'nav': 'Navigation',
@@ -28,7 +30,7 @@ PAGES = {
 
 
 class SiteText(models.Model):
-    key = models.CharField(max_length=120, unique=True)          # e.g. "home.hero.title"
+    key = models.CharField(max_length=120)          # e.g. "home.hero.title"
     page = models.CharField(max_length=20, db_index=True)        # key prefix, see PAGES
     en = models.TextField(blank=True)
     ar = models.TextField(blank=True)
@@ -39,7 +41,11 @@ class SiteText(models.Model):
         settings.AUTH_USER_MODEL, on_delete=models.SET_NULL, null=True, blank=True, related_name='+',
     )
 
+    side = side_field()            # the male or female gym (apps.core.sides)
+    objects = SideManager()
+
     class Meta:
+        constraints = [models.UniqueConstraint(fields=['side', 'key'], name='uniq_sitetext_key_per_side')]
         db_table = 'site_texts'
         ordering = ['key']
 
@@ -52,7 +58,7 @@ class SiteText(models.Model):
 
 
 class SiteImage(models.Model):
-    key = models.CharField(max_length=120, unique=True)          # e.g. "fac.pool"
+    key = models.CharField(max_length=120)          # e.g. "fac.pool"
     page = models.CharField(max_length=20, db_index=True)
     label = models.CharField(max_length=160, blank=True)         # human description for admins
     image = models.ImageField(upload_to='site/', blank=True, null=True)   # uploaded (Cloudinary)
@@ -64,7 +70,11 @@ class SiteImage(models.Model):
         settings.AUTH_USER_MODEL, on_delete=models.SET_NULL, null=True, blank=True, related_name='+',
     )
 
+    side = side_field()            # the male or female gym (apps.core.sides)
+    objects = SideManager()
+
     class Meta:
+        constraints = [models.UniqueConstraint(fields=['side', 'key'], name='uniq_siteimage_key_per_side')]
         db_table = 'site_images'
         ordering = ['key']
 
@@ -95,12 +105,15 @@ class SiteItem(models.Model):
         settings.AUTH_USER_MODEL, on_delete=models.SET_NULL, null=True, blank=True, related_name='+',
     )
 
+    side = side_field()            # the male or female gym (apps.core.sides)
+    objects = SideManager()
+
     class Meta:
         db_table = 'site_items'
         ordering = ['collection', 'order', 'id']
         constraints = [
             models.UniqueConstraint(
-                fields=['collection', 'slug'], condition=~models.Q(slug=''), name='uniq_item_slug_per_collection',
+                fields=['side', 'collection', 'slug'], condition=~models.Q(slug=''), name='uniq_item_slug_per_side_collection',
             ),
         ]
 
@@ -126,6 +139,9 @@ class ContactMessage(models.Model):
     lang = models.CharField(max_length=5, blank=True)            # site language when sent
     status = models.CharField(max_length=10, choices=STATUS, default=STATUS_NEW, db_index=True)
     created_at = models.DateTimeField(auto_now_add=True, db_index=True)
+
+    side = side_field()            # the male or female gym (apps.core.sides)
+    objects = SideManager()
 
     class Meta:
         db_table = 'contact_messages'

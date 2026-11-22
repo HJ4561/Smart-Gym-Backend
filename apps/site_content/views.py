@@ -14,6 +14,7 @@ from rest_framework.permissions import AllowAny
 from rest_framework.response import Response
 from rest_framework.throttling import SimpleRateThrottle
 
+from apps.core.roles import DeskRead
 from apps.admin_api.permissions import IsAdminUser
 from apps.members.models import MembershipPlan
 
@@ -459,7 +460,7 @@ def admin_plan(request, pk):
 # ADMIN — contact messages
 # ============================================================
 @api_view(['GET'])
-@permission_classes([IsAdminUser])
+@permission_classes([DeskRead('inbox', also_write=('PATCH',))])
 def admin_messages(request):
     """GET /api/admin/site-content/messages/?status=new"""
     qs = ContactMessage.objects.all()
@@ -470,7 +471,7 @@ def admin_messages(request):
 
 
 @api_view(['PATCH', 'DELETE'])
-@permission_classes([IsAdminUser])
+@permission_classes([DeskRead('inbox', also_write=('PATCH',))])
 def admin_message_detail(request, pk):
     """PATCH {status} · DELETE — /api/admin/site-content/messages/<id>/"""
     msg = get_object_or_404(ContactMessage, pk=pk)

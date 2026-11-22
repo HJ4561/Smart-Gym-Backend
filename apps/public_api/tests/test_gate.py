@@ -2,6 +2,7 @@
 from datetime import date, timedelta
 
 from django.contrib.auth import get_user_model
+from django.utils import timezone
 from rest_framework.test import APITestCase
 
 from apps.members.models import CheckIn, FaceCheck, Membership, MembershipPlan
@@ -23,7 +24,8 @@ class GateTestBase(APITestCase):
 
     def make_membership(self, user, iqama, plan=None, **overrides):
         fields = dict(member=user, plan=plan or self.plan, start_date=date.today(),
-                      expiry_date=date.today() + timedelta(days=30), iqama_number=iqama)
+                      expiry_date=date.today() + timedelta(days=30), iqama_number=iqama,
+                      id_verified_at=timezone.now())   # first-visit ID check done (see FirstVisitTests)
         fields.update(overrides)
         return Membership.objects.create(**fields)
 

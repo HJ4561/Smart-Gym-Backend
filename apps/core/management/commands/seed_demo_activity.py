@@ -267,7 +267,7 @@ class Command(BaseCommand):
                     counts['sessions'] += 1
                 if rng.random() < 0.6:
                     rating, text = rng.choice(REVIEWS)
-                    TrainerReview.objects.get_or_create(trainer=coach, member=m, defaults={'rating': rating, 'comment': text})
+                    TrainerReview.objects.get_or_create(trainer=coach, member=m, defaults={'rating': rating, 'comment': text, 'status': 'approved'})
             if cat['products'] and rng.random() < 0.45:
                 for _ in range(rng.randint(1, 3)):
                     when = at(today - timedelta(days=rng.randint(0, days)), 12)

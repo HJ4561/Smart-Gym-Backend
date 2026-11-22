@@ -7,6 +7,7 @@ urlpatterns = [
     path('', views.member_classes, name='member-classes'),
     path('<int:class_id>/book/', views.book_class, name='book'),
     path('<int:class_id>/cancel/', views.cancel_class, name='cancel'),
+    path('<int:class_id>/posts/', views.member_class_posts, name='posts'),
     path('schedule/', views.classes_schedule, name='schedule'),
     path('stats/', views.classes_stats, name='stats'),
     path('admin/', views.admin_classes, name='admin-list'),

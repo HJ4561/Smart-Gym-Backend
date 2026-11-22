@@ -12,18 +12,24 @@ User = get_user_model()
 class UserSerializer(serializers.ModelSerializer):
     """Public user info — safe to return to any client."""
     full_name = serializers.SerializerMethodField()
+    modules = serializers.SerializerMethodField()
 
     class Meta:
         model = User
         fields = [
             'id', 'email', 'username', 'first_name', 'last_name',
             'full_name', 'phone', 'role', 'avatar', 'date_of_birth',
-            'is_verified', 'must_change_password', 'created_at',
+            'is_verified', 'must_change_password', 'created_at', 'modules',
         ]
-        read_only_fields = ['id', 'email', 'role', 'is_verified', 'must_change_password', 'created_at']
+        read_only_fields = ['id', 'email', 'role', 'is_verified', 'must_change_password', 'created_at', 'modules']
 
     def get_full_name(self, obj):
         return f"{obj.first_name} {obj.last_name}".strip() or obj.username
+
+    def get_modules(self, obj):
+        """Front-desk modules this person may open (all for admins, the ticked ones for a receptionist)."""
+        from apps.core.roles import modules_of
+        return modules_of(obj)
 
 
 # ============================================
@@ -58,7 +64,7 @@ class RegisterSerializer(serializers.ModelSerializer):
         return attrs
 
     def validate_email(self, value):
-        if User.objects.filter(email__iexact=value).exists():
+        if User._base_manager.filter(email__iexact=value).exists():     # either gym
             raise serializers.ValidationError('Email already registered.')
         return value.lower()
 

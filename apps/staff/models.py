@@ -1,5 +1,6 @@
 from django.db import models
 from django.conf import settings
+from apps.core.sides import SideManager, side_field
 
 
 class StaffProfile(models.Model):
@@ -13,6 +14,7 @@ class StaffProfile(models.Model):
         ('coaching', 'Coaching'),
         ('clinical', 'Clinical'),
         ('front_desk', 'Front Desk'),
+        ('retail', 'Shop'),
         ('facility', 'Facility'),
     ]
 
@@ -35,11 +37,16 @@ class StaffProfile(models.Model):
     shift_end = models.TimeField(null=True, blank=True)
 
     permissions_count = models.IntegerField(default=0)
+    # Front-desk modules an admin gave this receptionist (apps.core.roles.DESK_MODULES keys).
+    modules = models.JSONField(default=list, blank=True)
     joined_at = models.DateField(null=True, blank=True)
     notes = models.TextField(blank=True)
 
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
+
+    side = side_field()            # the male or female gym (apps.core.sides)
+    objects = SideManager()
 
     class Meta:
         db_table = 'staff_profiles'
