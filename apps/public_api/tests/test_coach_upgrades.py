@@ -130,3 +130,41 @@ class CoachProfileApprovalTests(APITestCase):
         self.coach.refresh_from_db()
         self.coach.user.refresh_from_db()
         self.assertEqual((self.coach.user.first_name, self.coach.title), ('Omari', 'Senior coach'))
+
+
+class NewCourseQueueTests(APITestCase):
+    def setUp(self):
+        self.admin = User.objects.create_user(username='ad', email='ad@t.local', password='x', role='admin')
+        cu = User.objects.create_user(username='co', email='co@t.local', password='x', role='trainer', first_name='Omar')
+        self.coach = TrainerProfile.objects.create(user=cu, title='Coach', hourly_rate=Decimal('100'))
+        self.course = Course.objects.create(title='Kettlebell basics', description='Swing safely', category='strength',
+                                            trainer=self.coach, status='draft', price=Decimal('150'))
+        CourseModule.objects.create(course=self.course, order=1, title='Day 1')
+        self.client.force_authenticate(cu)
+
+    def submit(self):
+        return self.client.post(f'/api/coach/courses/{self.course.id}/submit/')
+
+    def test_submitted_course_is_queued_and_approval_publishes_it(self):
+        self.assertEqual(self.submit().status_code, 200)
+        cr = ChangeRequest.objects.get(target_type='coach.course_new')
+        approve(cr, self.admin, payload={'price': 120})              # the admin sets the price before publishing
+        self.course.refresh_from_db()
+        self.assertEqual((self.course.status, self.course.price), ('published', Decimal('120.00')))
+
+    def test_rejection_sends_it_back_with_the_note(self):
+        from apps.approvals.registry import reject
+        self.submit()
+        reject(ChangeRequest.objects.get(target_type='coach.course_new'), self.admin, note='Add a warm-up day')
+        self.course.refresh_from_db()
+        self.assertEqual((self.course.status, self.course.review_note), ('draft', 'Add a warm-up day'))
+        self.assertEqual(self.submit().status_code, 200)              # fixed and sent again
+        self.assertEqual(ChangeRequest.objects.filter(target_type='coach.course_new', status='pending').count(), 1)
+
+    def test_publishing_from_the_coaches_page_closes_the_queue_entry(self):
+        self.submit()
+        self.client.force_authenticate(self.admin)
+        r = self.client.patch(f'/api/admin/courses/{self.course.id}/', {'status': 'published'}, format='json')
+        self.assertEqual(r.status_code, 200, r.data)
+        self.assertEqual(ChangeRequest.objects.get(target_type='coach.course_new').status, 'approved')
+        self.assertEqual(self.client.get('/api/admin/approvals/').data['courses_waiting'], 0)

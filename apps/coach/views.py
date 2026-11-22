@@ -27,7 +27,6 @@ from rest_framework.response import Response
 from apps.admin_api import catalog_ops, ops
 from apps.catalog.models import Course, Enrollment, TrainerProfile, TrainerReview, TrainerSession
 from apps.classes.models import ClassPass, GymClass
-from apps.notifications.service import notify_staff
 from apps.workouts import videos as vids
 from apps.workouts.models import Exercise, ExerciseVideo, VideoPurchase
 
@@ -331,12 +330,10 @@ def course_submit(request, course_id):
     c.submitted_at = timezone.now()
     c.review_note = ''
     c.save(update_fields=['status', 'submitted_at', 'review_note', 'updated_at'])
-    from apps.core.i18n import ar, bi
-    coach = c.trainer.user.full_name
-    notify_staff('course', bi('Course waiting for review', 'دورة بانتظار المراجعة'),
-                 bi(f'{coach} sent “{c.title}” for review.', f'أرسل {coach} «{ar(c, "title")}» للمراجعة.'),
-                 icon='rate_review',
-                 action_label='Review course', action_path='/admin/trainers?tab=courses&status=pending')
+    # The approval queue tells the admins (apps.approvals); approving there publishes the course.
+    from apps.approvals.registry import pending_for, submit_create
+    if not pending_for('coach.course_new', c.pk).exists():
+        submit_create(request.user, 'coach.course_new', c)
     return Response(_coach_course_row(c, modules=True))
 
 

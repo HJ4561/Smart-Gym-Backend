@@ -474,6 +474,7 @@ MESSAGES = {
     'This email is already used by an account at the other gym.': 'هذا البريد مستخدم لحساب في النادي الآخر.',
     'Only member accounts can be deleted here. Remove staff from Team.': 'يمكن حذف حسابات الأعضاء فقط هنا. أزل الموظفين من صفحة الفريق.',
     'Member deleted.': 'تم حذف العضو.',
+    'Add a description and at least one lesson before publishing.': 'أضف وصفًا ودرسًا واحدًا على الأقل قبل النشر.',
     'Choose a member.': 'اختر عضوًا.',
     'Choose a nutritionist.': 'اختر أخصائي تغذية.',
     'This member already has an active plan with this nutritionist — edit that one instead.': 'لدى هذا العضو خطة نشطة مع هذا الأخصائي — عدّلها بدلًا من ذلك.',

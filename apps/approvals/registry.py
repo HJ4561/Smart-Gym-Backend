@@ -172,6 +172,7 @@ def reject(cr, admin, note=''):
     obj = target(cr)
     with transaction.atomic():
         if cr.kind == 'create' and obj is not None and k.hide:
+            obj._review_note = note[:2000]          # for kinds that keep the reason (a course sent back)
             k.hide(obj)
         cr.status, cr.reviewed_by, cr.reviewed_at, cr.review_note = 'rejected', admin, timezone.now(), note[:2000]
         cr.save()

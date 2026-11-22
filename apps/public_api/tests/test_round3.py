@@ -281,7 +281,7 @@ class CoachPortalTests(Base):
         self.assertEqual((r.status_code, r.data['status']), (201, 'draft'))
         cid = r.data['id']
         self.assertEqual(self.client.post(f'/api/coach/courses/{cid}/submit/').data['status'], 'pending')
-        self.assertTrue(Notification.objects.filter(recipient=self.admin, title='Course waiting for review').exists())
+        self.assertTrue(Notification.objects.filter(recipient=self.admin, title='Waiting for approval: New course').exists())   # through the approval queue
         self.as_(self.admin)
         self.assertEqual(self.client.patch(f'/api/admin/courses/{cid}/', {'status': 'draft'}, format='json').status_code, 400)
         self.client.patch(f'/api/admin/courses/{cid}/', {'status': 'draft', 'review_note': 'Add a warm-up.'}, format='json')

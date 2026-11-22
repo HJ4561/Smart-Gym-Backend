@@ -320,3 +320,36 @@ def _coach_profile_kind():
 
 
 _coach_profile_kind()
+
+
+# ---------------------------------------------------------------- new coach courses
+def _new_course_kind():
+    from apps.approvals.registry import KINDS
+    from apps.catalog.models import Course
+    live = KINDS['coach.course']          # same fields, checks and lesson handling as a live course's change
+
+    def publish(c):
+        if not (c.description or '').strip() or not c.modules.exists():
+            from .registry import ReviewError
+            raise ReviewError({'detail': 'Add a description and at least one lesson before publishing.'})
+        c.status = 'published'
+        c.review_note = ''
+        c.save()
+
+    def hide(c):
+        c.status = 'draft'                  # back to the coach to fix, with the admin's note
+        c.review_note = getattr(c, '_review_note', '') or 'Not approved.'
+        c.save(update_fields=['status', 'review_note', 'updated_at'])
+
+    def save(c):
+        live.save(c)
+
+    register('coach.course_new', label='New course', label_ar='دورة جديدة', model=Course,
+             describe=lambda c: f'{c.title} — SAR {c.price}', snapshot=live.snapshot, apply=live.apply,
+             publish=lambda c: (save(c), publish(c)), hide=hide, remove=lambda c: None,
+             owner_path=lambda c: f'/coach/courses/{c.id}', admin_path='/admin/trainers?tab=courses&status=pending',
+             editable=('title', 'title_ar', 'subtitle', 'subtitle_ar', 'description', 'description_ar', 'price',
+                       'category', 'level'))
+
+
+_new_course_kind()

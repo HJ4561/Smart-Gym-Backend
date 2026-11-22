@@ -199,5 +199,7 @@ def withdraw(request, cr_id):
 
 
 def _courses_waiting():
+    """Courses waiting for review that aren't in the queue (sent before courses joined it)."""
     from apps.catalog.models import Course
-    return Course.objects.filter(status='pending').count()
+    queued = ChangeRequest.objects.filter(target_type='coach.course_new', status='pending').values('object_id')
+    return Course.objects.filter(status='pending').exclude(id__in=queued).count()

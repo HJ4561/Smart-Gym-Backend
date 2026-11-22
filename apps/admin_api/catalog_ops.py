@@ -559,6 +559,11 @@ def course_detail(request, course_id):
                 transaction.set_rollback(True)
                 return Response(errors, status=400)
     _tell_coach(c, status_before)
+    if status_before == 'pending' and c.status != 'pending':
+        from apps.approvals.registry import pending_for
+        pending_for('coach.course_new', c.pk).update(
+            status='approved' if c.status == 'published' else 'rejected', reviewed_by=request.user,
+            reviewed_at=timezone.now(), review_note=c.review_note if c.status != 'published' else '')
     return Response(_course_row(c, modules=True))
 
 
