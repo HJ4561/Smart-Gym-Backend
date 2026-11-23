@@ -301,7 +301,20 @@ def admin_collection_items(request, name):
     """
     schema = _collection_or_404(name)
     if request.method == 'GET':
+        # ?q= searches every text of the item (both languages); ?active=true|false; ?<choice field>=value
+        from django.db.models import TextField
+        from django.db.models.functions import Cast
+        from apps.core import listing
+        p = request.query_params
         items = SiteItem.objects.filter(collection=name).select_related('updated_by')
+        if p.get('q'):
+            items = listing.search(items.annotate(_text=Cast('data', TextField())), p['q'], ['_text'])
+        active = listing.flag(p.get('active'))
+        if active is not None:
+            items = items.filter(is_active=active)
+        for fd in schema['fields']:
+            if fd.get('type') == 'choice' and p.get(fd['name']):
+                items = items.filter(**{f"data__{fd['name']}": p[fd['name']]})
         return Response(SiteItemSerializer(items, many=True).data)
     try:
         data = clean_data(name, request.data.get('data', {}))
@@ -462,10 +475,15 @@ def admin_plan(request, pk):
 @api_view(['GET'])
 @permission_classes([DeskRead('inbox', also_write=('PATCH',))])
 def admin_messages(request):
-    """GET /api/admin/site-content/messages/?status=new"""
+    """GET /api/admin/site-content/messages/?status=new&q=&topic=&from=&to="""
+    from apps.core import listing
+    p = request.query_params
     qs = ContactMessage.objects.all()
-    if st := request.query_params.get('status'):
+    if st := p.get('status'):
         qs = qs.filter(status=st)
+    qs = listing.search(qs, p.get('q'), ['name', 'email', 'phone', 'topic', 'subtopic', 'message'])
+    qs = listing.choice(qs, p, 'topic', 'topic')
+    qs = listing.date_range(qs, p, 'created_at')
     counts = dict(ContactMessage.objects.values_list('status').annotate(n=Count('id')))
     return Response({'counts': counts, 'results': ContactMessageSerializer(qs[:500], many=True).data})
 

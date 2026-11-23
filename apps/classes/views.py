@@ -137,8 +137,15 @@ def member_classes(request):
             mine[e.gym_class_id] = 'waitlist' if e.status == 'waitlist' else 'enrolled'
             mine[('at', e.gym_class_id)] = e.enrolled_at
     today = timezone.localdate()
-    classes = (_annotated(GymClass.objects.filter(is_active=True).exclude(ends_on__lt=today))
-               .order_by('day_of_week', 'start_time'))
+    from apps.core import listing          # ?q= &level= &category= &trainer=
+    p = request.query_params
+    base = listing.search(GymClass.objects.filter(is_active=True).exclude(ends_on__lt=today), p.get('q'),
+                          ['name', 'name_ar', 'trainer__user__first_name', 'trainer__user__last_name', 'location'])
+    base = listing.choice(base, p, 'level', 'level')
+    base = listing.choice(base, p, 'category', 'category')
+    if str(p.get('trainer') or '').isdigit():
+        base = base.filter(trainer_id=p['trainer'])
+    classes = _annotated(base).order_by('day_of_week', 'start_time')
     rows = []
     for c in classes:
         row = _row(c, mine)
@@ -413,14 +420,25 @@ def _apply_paid(c, data, errors):
 @api_view(['GET', 'POST'])
 @permission_classes([DeskRead('classes')])
 def admin_classes(request):
-    """GET /api/classes/admin/?day=&q=&include_paused=1 · POST {name, category, day_of_week, start_time, …}"""
+    """
+    GET /api/classes/admin/?day=&q=&category=&level=&trainer=&paid=true|false&include_paused=1
+    POST {name, category, day_of_week, start_time, …}
+    """
     if request.method == 'GET':
-        qs = GymClass.objects.all() if request.query_params.get('include_paused') else GymClass.objects.filter(is_active=True)
-        if request.query_params.get('day', '').isdigit():
-            qs = qs.filter(day_of_week=int(request.query_params['day']))
-        q = (request.query_params.get('q') or '').strip()
-        if q:
-            qs = qs.filter(Q(name__icontains=q) | Q(trainer__user__first_name__icontains=q) | Q(location__icontains=q))
+        from apps.core import listing
+        p = request.query_params
+        qs = GymClass.objects.all() if p.get('include_paused') else GymClass.objects.filter(is_active=True)
+        if p.get('day', '').isdigit():
+            qs = qs.filter(day_of_week=int(p['day']))
+        qs = listing.search(qs, p.get('q'), ['name', 'name_ar', 'trainer__user__first_name', 'trainer__user__last_name',
+                                              'location', 'location_ar', 'description'])
+        qs = listing.choice(qs, p, 'category', 'category')
+        qs = listing.choice(qs, p, 'level', 'level')
+        if str(p.get('trainer') or '').isdigit():
+            qs = qs.filter(trainer_id=int(p['trainer']))
+        paid = listing.flag(p.get('paid'))
+        if paid is not None:
+            qs = qs.filter(price_per_session__gt=0) if paid else qs.filter(price_per_session=0)
         return Response([_row(c) for c in _annotated(qs).order_by('day_of_week', 'start_time')])
     c = GymClass(category='strength', level='all_levels')
     errors = {}

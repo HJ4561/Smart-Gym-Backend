@@ -283,6 +283,8 @@ def documents(request):
         qs = qs.filter(status=st)
     if request.query_params.get('type') in ('invoice', 'credit', 'debit'):
         qs = qs.filter(doc_type=request.query_params['type'])
+    from apps.core import listing
+    qs = listing.date_range(qs, request.query_params, 'issued_at')          # ?from= ?to=
     q = (request.query_params.get('q') or '').strip()
     if q:
         qs = qs.filter(Q(number__icontains=q) | Q(customer_name__icontains=q)

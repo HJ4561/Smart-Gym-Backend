@@ -75,6 +75,16 @@ def facility_pricing(request):
     counts = dict(active.values_list('item_id').annotate(n=Count('id')))
     since = timezone.now() - timedelta(days=30)
     rows = [_facility_row(i, addons.get(i.id), counts.get(i.id, 0)) for i in items]
+    # ?q= (name, category, location) · ?show=bookable|not_bookable|hidden|visible — the summary stays whole.
+    p = request.query_params
+    words = str(p.get('q') or '').lower().split()
+    text = lambda r: ' '.join(str(r.get(k) or '') for k in ('name', 'name_ar', 'category', 'location')).lower()  # noqa: E731
+    shown = [r for r in rows if all(w in text(r) for w in words)]
+    show = p.get('show')
+    keep = {'bookable': lambda r: r['is_bookable'], 'not_bookable': lambda r: not r['is_bookable'],
+            'hidden': lambda r: not r['is_active'], 'visible': lambda r: r['is_active']}.get(show)
+    if keep:
+        shown = [r for r in shown if keep(r)]
     return Response({
         'summary': {
             'total': len(rows),
@@ -84,7 +94,7 @@ def facility_pricing(request):
             'addon_revenue_30d': str(MembershipFacility.objects.filter(created_at__gte=since)
                                      .aggregate(s=Sum('amount'))['s'] or Decimal('0.00')),
         },
-        'results': rows,
+        'results': shown,
     })
 
 
@@ -331,8 +341,14 @@ def _trainer_row(t):
 @api_view(['GET'])
 @permission_classes([IsAdminUser])
 def trainer_hours(request):
-    """GET /api/admin/trainer-hours/ — trainers with their weekly booking hours."""
-    return Response([_trainer_row(t) for t in TrainerProfile.objects.select_related('user').order_by('user__first_name')])
+    """GET /api/admin/trainer-hours/?q=&accepting=true|false — trainers with their weekly booking hours."""
+    from apps.core import listing
+    qs = listing.search(TrainerProfile.objects.select_related('user'), request.query_params.get('q'),
+                        ['user__first_name', 'user__last_name', 'user__email', 'title'])
+    accepting = listing.flag(request.query_params.get('accepting'))
+    if accepting is not None:
+        qs = qs.filter(is_accepting_clients=accepting)
+    return Response([_trainer_row(t) for t in qs.order_by('user__first_name')])
 
 
 def _parse_time(v):
@@ -416,10 +432,16 @@ def _session_row(s):
 @api_view(['GET'])
 @permission_classes([IsAdminUser])
 def trainer_sessions(request):
-    """GET /api/admin/trainer-sessions/?trainer=<id>&scope=upcoming|past"""
+    """GET /api/admin/trainer-sessions/?trainer=<id>&scope=upcoming|past&status=&q=&from=&to="""
+    from apps.core import listing
+    p = request.query_params
     qs = TrainerSession.objects.select_related('trainer__user', 'member').exclude(status='pending_payment')
-    if request.query_params.get('trainer'):
-        qs = qs.filter(trainer_id=request.query_params['trainer'])
+    if str(p.get('trainer') or '').isdigit():
+        qs = qs.filter(trainer_id=p['trainer'])
+    qs = listing.choice(qs, p, 'status', 'status', ('scheduled', 'completed', 'no_show', 'cancelled'))
+    qs = listing.search(qs, p.get('q'), ['member__first_name', 'member__last_name', 'member__email',
+                                         'trainer__user__first_name', 'trainer__user__last_name', 'focus_area', 'notes'])
+    qs = listing.date_range(qs, p, 'scheduled_at')
     now = timezone.now()
     if request.query_params.get('scope', 'upcoming') == 'past':
         qs = qs.filter(scheduled_at__lt=now).order_by('-scheduled_at')

@@ -30,20 +30,26 @@ from .serializers import (
 def trainers_list(request):
     """
     GET /api/catalog/trainers/
-    Query params: ?search=&verified=true&accepting=true
+    Query params: ?search= (or q=) &verified=true &accepting=true &open=true (taking 1-on-1 bookings)
+                  &specialty= &sort=rating|price|experience
     """
+    from django.db.models import Q
+    from apps.core import listing
+    p = request.query_params
     qs = TrainerProfile.objects.select_related('user').filter(user__is_active=True)   # hidden by staff → not listed
 
-    if request.query_params.get('verified') == 'true':
+    if p.get('verified') == 'true':
         qs = qs.filter(is_verified=True)
-    if request.query_params.get('accepting') == 'true':
+    if p.get('accepting') == 'true':
         qs = qs.filter(is_accepting_clients=True)
-
-    search = request.query_params.get('search')
-    if search:
-        qs = qs.filter(user__first_name__icontains=search) | \
-             qs.filter(user__last_name__icontains=search) | \
-             qs.filter(title__icontains=search)
+    if p.get('open') == 'true':
+        qs = qs.filter(is_accepting_clients=True, offers_1on1=True)
+    if p.get('specialty'):
+        qs = qs.filter(Q(specialties__icontains=p['specialty']) | Q(specialties_ar__icontains=p['specialty']))
+    qs = listing.search(qs, p.get('q') or p.get('search'),
+                        ['user__first_name', 'user__last_name', 'title', 'title_ar', 'specialties', 'specialties_ar'])
+    qs = qs.order_by(*{'price': ('hourly_rate',), 'experience': ('-years_experience',)}.get(
+        p.get('sort'), ('-rating', '-total_reviews')))
 
     return Response(TrainerProfileSerializer(qs, many=True).data)
 
@@ -113,9 +119,13 @@ def courses_list(request):
     if request.query_params.get('featured') == 'true':
         qs = qs.filter(is_featured=True)
 
-    search = request.query_params.get('search')
-    if search:
-        qs = qs.filter(title__icontains=search) | qs.filter(description__icontains=search)
+    from apps.core import listing
+    qs = listing.search(qs, request.query_params.get('q') or request.query_params.get('search'),
+                        ['title', 'title_ar', 'description', 'category', 'trainer__user__first_name',
+                         'trainer__user__last_name'])
+    sort = request.query_params.get('sort')          # price | -price | rating | newest
+    qs = qs.order_by(*{'price': ('price',), '-price': ('-price',), 'rating': ('-rating',),
+                       'newest': ('-created_at',)}.get(sort, ('-is_featured', '-created_at')))
 
     return Response(CourseListSerializer(qs, many=True, context={'request': request}).data)
 

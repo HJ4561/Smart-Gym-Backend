@@ -198,9 +198,14 @@ def hours(request):
 @api_view(['GET'])
 @permission_classes([IsCoach])
 def sessions(request):
-    """GET /api/coach/sessions/?scope=upcoming|past"""
+    """GET /api/coach/sessions/?scope=upcoming|past&status=&q=&from=&to="""
+    from apps.core import listing
     t = _me(request)
+    p = request.query_params
     qs = TrainerSession.objects.select_related('trainer__user', 'member').filter(trainer=t).exclude(status='pending_payment')
+    qs = listing.choice(qs, p, 'status', 'status', ('scheduled', 'completed', 'no_show', 'cancelled'))
+    qs = listing.search(qs, p.get('q'), ['member__first_name', 'member__last_name', 'member__email', 'focus_area', 'notes'])
+    qs = listing.date_range(qs, p, 'scheduled_at')
     now = timezone.now()
     if request.query_params.get('scope', 'upcoming') == 'past':
         qs = qs.filter(scheduled_at__lt=now).order_by('-scheduled_at')
@@ -248,9 +253,15 @@ def courses(request):
     """GET my courses · POST {title, description, category, …, modules?} → a new draft."""
     t = _me(request)
     if request.method == 'GET':
+        from apps.core import listing
+        p = request.query_params
         qs = (Course.objects.filter(trainer=t).select_related('trainer__user')
               .annotate(enrolled=Count('enrollments', distinct=True), module_count=Count('modules', distinct=True))
               .order_by('-updated_at'))
+        qs = listing.choice(qs, p, 'status', 'status', ('draft', 'pending', 'published', 'archived'))
+        qs = listing.choice(qs, p, 'category', 'category')
+        qs = listing.choice(qs, p, 'level', 'level')
+        qs = listing.search(qs, p.get('q'), ['title', 'title_ar', 'subtitle', 'description'])
         return Response({'courses': [_coach_course_row(c) for c in qs], 'categories': catalog_ops.COURSE_CATEGORIES})
     data = {k: v for k, v in request.data.items() if k in COACH_COURSE_FIELDS}
     c = Course(status='draft', trainer=t)
@@ -357,12 +368,20 @@ def course_cover(request, course_id):
 @api_view(['GET'])
 @permission_classes([IsCoach])
 def students(request):
-    """GET /api/coach/students/ — course enrolments (with progress) and 1-on-1 clients."""
+    """GET /api/coach/students/?q=&course=&status= — course enrolments (with progress) and 1-on-1 clients."""
+    from apps.core import listing
     t = _me(request)
+    p = request.query_params
+    people = ['member__first_name', 'member__last_name', 'member__email']
     enrolments = (Enrollment.objects.filter(course__trainer=t).select_related('member', 'course')
                   .annotate(done=Count('completed_modules', distinct=True), total=Count('course__modules', distinct=True))
                   .order_by('-enrolled_at'))
-    clients = (TrainerSession.objects.filter(trainer=t).exclude(status__in=('pending_payment', 'cancelled'))
+    enrolments = listing.search(enrolments, p.get('q'), people + ['course__title'])
+    if str(p.get('course') or '').isdigit():
+        enrolments = enrolments.filter(course_id=p['course'])
+    enrolments = listing.choice(enrolments, p, 'status', 'status')
+    clients = (listing.search(TrainerSession.objects.filter(trainer=t), p.get('q'), people)
+               .exclude(status__in=('pending_payment', 'cancelled'))
                .values('member_id', 'member__first_name', 'member__last_name', 'member__email')
                .annotate(sessions=Count('id'), completed=Count('id', filter=Q(status='completed'))).order_by('-sessions'))
     return Response({
@@ -383,9 +402,14 @@ def students(request):
 @api_view(['GET'])
 @permission_classes([IsCoach])
 def reviews(request):
-    """GET /api/coach/reviews/"""
+    """GET /api/coach/reviews/?rating=1-5&q=&from=&to="""
+    from apps.core import listing
     t = _me(request)
-    qs = TrainerReview.objects.filter(trainer=t, status='approved').select_related('member').order_by('-created_at')[:100]
+    p = request.query_params
+    qs = TrainerReview.objects.filter(trainer=t, status='approved').select_related('member')
+    qs = listing.choice(qs, p, 'rating', 'rating', ('1', '2', '3', '4', '5'))
+    qs = listing.search(qs, p.get('q'), ['comment', 'member__first_name', 'member__last_name'])
+    qs = listing.date_range(qs, p, 'created_at').order_by('-created_at')[:100]
     return Response({'rating': _f(t.rating), 'total': t.total_reviews, 'reviews': [{
         'id': r.id, 'rating': r.rating, 'comment': r.comment, 'created_at': r.created_at,
         'member': (r.member.first_name or 'Member') + (f' {r.member.last_name[:1]}.' if r.member.last_name else ''),
@@ -437,6 +461,8 @@ def videos(request):
     if request.method == 'GET':
         from .extra import with_pending_video
         qs = vids.with_sales(ExerciseVideo.objects.filter(coach=t)).order_by('exercise__name', 'created_at')
+        if request.query_params.get('tier') in vids.TIERS:
+            qs = qs.filter(tier=request.query_params['tier'])
         st = request.query_params.get('status')
         if st in ('pending', 'approved', 'rejected'):
             qs = qs.filter(approval_status=st)

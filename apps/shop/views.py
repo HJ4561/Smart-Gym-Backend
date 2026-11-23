@@ -66,11 +66,12 @@ def products_list(request):
     if request.query_params.get('in_stock') != 'false':
         qs = qs.filter(stock_quantity__gt=0)
 
-    search = request.query_params.get('search')
-    if search:
-        qs = qs.filter(
-            Q(name__icontains=search) | Q(description__icontains=search)
-        )
+    from apps.core import listing          # ?search= (or q=) in both languages · ?sort=price|-price|newest|popular
+    qs = listing.search(qs, request.query_params.get('q') or request.query_params.get('search'),
+                        ['name', 'name_ar', 'description', 'description_ar', 'category__name', 'category__name_ar'])
+    sort = request.query_params.get('sort')
+    qs = qs.order_by(*{'price': ('price',), '-price': ('-price',), 'newest': ('-created_at',),
+                       'popular': ('-total_sold',)}.get(sort, ('-is_featured', 'name')))
 
     return Response(ProductListSerializer(qs, many=True).data)
 

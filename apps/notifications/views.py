@@ -12,9 +12,12 @@ from .serializers import NotificationSerializer, NotificationPreferenceSerialize
 @permission_classes([IsAuthenticated])
 def my_notifications(request):
     """
-    GET /api/notifications/?category=&unread=true
+    GET /api/notifications/?category=&unread=true&q=&from=&to=
     """
+    from apps.core import listing
     qs = Notification.objects.filter(recipient=request.user)
+    qs = listing.search(qs, request.query_params.get('q'), ['title', 'message'])
+    qs = listing.date_range(qs, request.query_params, 'created_at')
 
     category = request.query_params.get('category')
     if category:

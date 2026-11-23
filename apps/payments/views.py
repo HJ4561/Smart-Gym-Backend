@@ -67,6 +67,9 @@ def my_transactions(request):
     if type_filter:
         qs = qs.filter(transaction_type=type_filter)
 
+    from apps.core import listing      # ?q= (what it was for, receipt number) · ?from= ?to=
+    qs = listing.search(qs, request.query_params.get('q'), ['description', 'transaction_id', 'payment_method_label'])
+    qs = listing.date_range(qs, request.query_params, 'created_at')
     return Response(TransactionListSerializer(qs[:100], many=True).data)
 
 

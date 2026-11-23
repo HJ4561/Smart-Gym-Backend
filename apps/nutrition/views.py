@@ -38,15 +38,11 @@ def nutritionists_list(request):
 
     specialty = request.query_params.get('specialty')
     if specialty and specialty != 'All Specialties':
-        qs = qs.filter(specialties__contains=[specialty])
+        qs = qs.filter(Q(specialties__icontains=specialty) | Q(specialties_ar__icontains=specialty))
 
-    search = request.query_params.get('search')
-    if search:
-        qs = qs.filter(
-            Q(user__first_name__icontains=search) |
-            Q(user__last_name__icontains=search) |
-            Q(title__icontains=search)
-        )
+    from apps.core import listing
+    qs = listing.search(qs, request.query_params.get('q') or request.query_params.get('search'),
+                        ['user__first_name', 'user__last_name', 'title', 'title_ar', 'specialties', 'specialties_ar'])
 
     return Response(NutritionistProfileSerializer(qs, many=True).data)
 

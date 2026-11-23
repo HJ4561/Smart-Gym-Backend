@@ -144,14 +144,17 @@ def _yt_thumb(url):
 @api_view(['GET'])
 @permission_classes([IsCoach])
 def classes(request):
-    """GET /api/coach/classes/?scope=upcoming|past — each class with its roster, dated sessions and posts."""
+    """GET /api/coach/classes/?scope=upcoming|past&q=&category= — each class with its roster, dates and posts."""
     from apps.classes.views import _annotated, roster
+    from apps.core import listing
     t = _me(request)
     scope = 'past' if request.query_params.get('scope') == 'past' else 'upcoming'
     today = timezone.localdate()
     qs = _annotated(GymClass.objects.filter(trainer=t)).order_by('-is_active', 'day_of_week', 'start_time')
     if scope == 'upcoming':
         qs = qs.filter(is_active=True).exclude(ends_on__lt=today)
+    qs = listing.search(qs, request.query_params.get('q'), ['name', 'name_ar', 'location'])
+    qs = listing.choice(qs, request.query_params, 'category', 'category')
     out = []
     for c in qs:
         row = roster(c)
